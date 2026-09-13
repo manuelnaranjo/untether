@@ -147,6 +147,7 @@ class TestUsageEngineGate:
     @pytest.mark.anyio
     async def test_usage_allowed_for_antigravity_attempts_fetch(self, monkeypatch):
         """For Antigravity, /usage should fetch usage by running /usage inside agy."""
+
         async def _fake_fetch(*a, **kw):
             return {
                 "engine": "antigravity",

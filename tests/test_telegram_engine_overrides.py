@@ -282,6 +282,17 @@ def test_get_reasoning_label() -> None:
     assert get_reasoning_label("amp") == "Reasoning"
 
 
+def test_get_reasoning_command() -> None:
+    """Engine-specific canonical reasoning slash commands."""
+    from untether.telegram.engine_overrides import get_reasoning_command
+
+    assert get_reasoning_command("claude") == "effort"
+    assert get_reasoning_command("antigravity") == "effort"
+    assert get_reasoning_command("codex") == "reasoning"
+    assert get_reasoning_command("pi") == "reasoning"
+    assert get_reasoning_command("amp") == "reasoning"
+
+
 # ---------------------------------------------------------------------------
 # loop_enabled (#289) — per-chat /loop mode toggle
 
