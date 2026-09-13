@@ -75,6 +75,12 @@ def reset_cache() -> None:
     _ag_last_success_wall = None
     _ag_last_error_kind = None
     _ag_last_error_message = None
+    try:
+        from ..telegram.commands.model import reset_model_cache
+
+        reset_model_cache()
+    except ImportError:
+        pass
 
 
 def get_cache_stats(engine: str = "claude") -> UsageCacheStats:

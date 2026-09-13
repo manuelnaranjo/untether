@@ -417,7 +417,9 @@ class TestAntigravityBuildArgs:
             args = runner.build_args("hello", None, state=state)
         assert "--model" in args
         idx = args.index("--model")
-        assert args[idx + 1] == "gemini-3.8-flash-high"
+        assert args[idx + 1] == "gemini-3.8-flash"
+        assert "--effort" in args
+        assert args[args.index("--effort") + 1] == "high"
 
     def test_model_from_config(self) -> None:
         runner = self._runner(model="gemini-3.8-flash-medium")
@@ -426,7 +428,9 @@ class TestAntigravityBuildArgs:
             args = runner.build_args("hello", None, state=state)
         assert "--model" in args
         idx = args.index("--model")
-        assert args[idx + 1] == "gemini-3.8-flash-medium"
+        assert args[idx + 1] == "gemini-3.8-flash"
+        assert "--effort" in args
+        assert args[args.index("--effort") + 1] == "medium"
 
     def test_permission_mode_plan(self) -> None:
         runner = self._runner()

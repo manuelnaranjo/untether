@@ -328,7 +328,9 @@ async def fetch_antigravity_usage(
         stdin=asyncio.subprocess.DEVNULL,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout_seconds
+        )
     except TimeoutError:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
@@ -336,7 +338,9 @@ async def fetch_antigravity_usage(
 
     if proc.returncode != 0:
         err_msg = stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"agy exited with code {proc.returncode}: {err_msg or 'unknown error'}")
+        raise RuntimeError(
+            f"agy exited with code {proc.returncode}: {err_msg or 'unknown error'}"
+        )
 
     usage_data: dict[str, Any] = {}
     for line in stdout.decode("utf-8", errors="replace").splitlines():
@@ -404,8 +408,14 @@ def format_antigravity_usage(data: dict) -> str:
                 pct_used = max(0.0, min(100.0, (1.0 - float(rem)) * 100))
                 bar = _progress_bar(pct_used)
                 pct_left = float(rem) * 100
-                reset_str = f" (resets in {_time_until(reset)})" if reset and pct_used > 0 else ""
-                lines.append(f"• {b_name}: {bar} {pct_used:.0f}% ({pct_left:.0f}% left{reset_str})")
+                reset_str = (
+                    f" (resets in {_time_until(reset)})"
+                    if reset and pct_used > 0
+                    else ""
+                )
+                lines.append(
+                    f"• {b_name}: {bar} {pct_used:.0f}% ({pct_left:.0f}% left{reset_str})"
+                )
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -481,7 +491,9 @@ def _resolve_antigravity_cmd(ctx: CommandContext) -> str:
             from ...config import load_config
 
             cfg = load_config(ctx.config_path)
-            raw = cfg.get("antigravity", {}).get("cmd") or cfg.get("antigravity", {}).get("antigravity_cmd")
+            raw = cfg.get("antigravity", {}).get("cmd") or cfg.get(
+                "antigravity", {}
+            ).get("antigravity_cmd")
             if raw and isinstance(raw, str):
                 return os.path.expanduser(raw)
     from ...runners.antigravity import default_antigravity_cmd
@@ -543,9 +555,13 @@ class UsageCommand:
 
             text = format_antigravity_usage(data)
             if debug_mode:
-                text = text + "\n" + _format_antigravity_debug_section(
-                    conversation_id=conversation_id,
-                    antigravity_cmd=antigravity_cmd,
+                text = (
+                    text
+                    + "\n"
+                    + _format_antigravity_debug_section(
+                        conversation_id=conversation_id,
+                        antigravity_cmd=antigravity_cmd,
+                    )
                 )
             return CommandResult(text=text, notify=True, parse_mode="HTML")
 

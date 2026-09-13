@@ -320,7 +320,9 @@ def test_build_args_with_model() -> None:
     state = AntigravityStreamState()
     args = runner.build_args("hello", None, state=state)
     assert "--model" in args
-    assert "gemini-3.8-flash-high" in args
+    assert "gemini-3.8-flash" in args
+    assert "--effort" in args
+    assert "high" in args
 
 
 def test_stdin_payload_returns_none() -> None:
@@ -458,7 +460,11 @@ def test_default_antigravity_cmd_fallback_which(monkeypatch) -> None:
     fake_home = Path("/fake/home/user")
     monkeypatch.setattr(Path, "home", lambda: fake_home)
     monkeypatch.setattr(Path, "exists", lambda _self: False)
-    monkeypatch.setattr(antigravity.shutil, "which", lambda cmd: "/usr/bin/agy" if cmd == "agy" else None)
+    monkeypatch.setattr(
+        antigravity.shutil,
+        "which",
+        lambda cmd: "/usr/bin/agy" if cmd == "agy" else None,
+    )
 
     assert antigravity.default_antigravity_cmd() == "/usr/bin/agy"
 
@@ -515,7 +521,9 @@ def test_translate_command_result_event() -> None:
     state = AntigravityStreamState()
     raw = b'{"event":"command_result","command":{"name":"usage","data":{"groups":[{"name":"Gemini"}]}}}'
     evt = antigravity_schema.decode_event(raw)
-    events = translate_antigravity_event(evt, title="antigravity", state=state, meta=None)
+    events = translate_antigravity_event(
+        evt, title="antigravity", state=state, meta=None
+    )
 
     assert len(events) == 1
     assert isinstance(events[0], StartedEvent)
@@ -567,12 +575,58 @@ async def test_fetch_antigravity_usage_parsing(monkeypatch) -> None:
             return "".join(output_lines).encode("utf-8"), b""
 
     monkeypatch.setattr(
-        asyncio, "create_subprocess_exec", lambda *a, **kw: asyncio.sleep(0, result=FakeProc())
+        asyncio,
+        "create_subprocess_exec",
+        lambda *a, **kw: asyncio.sleep(0, result=FakeProc()),
     )
     monkeypatch.setattr("shutil.which", lambda _c: "/usr/bin/agy")
 
     res = await fetch_antigravity_usage(conversation_id="conv123")
     assert res["engine"] == "antigravity"
     assert len(res["groups"]) == 1
-    assert res["five_hour"] == {"utilization": 70.0, "resets_at": "2030-01-01T00:00:00Z"}
+    assert res["five_hour"] == {
+        "utilization": 70.0,
+        "resets_at": "2030-01-01T00:00:00Z",
+    }
 
+
+def test_antigravity_build_args_model_and_effort() -> None:
+    from untether.runners.run_options import EngineRunOptions, apply_run_options
+
+    runner = AntigravityRunner()
+
+    # 1. New session with model and effort -> --model <base> --effort <effort>
+    with apply_run_options(
+        EngineRunOptions(model="gemini-3.8-flash", reasoning="high")
+    ):
+        args_new = runner.build_args(
+            "hi", resume=None, state=runner.new_state("hi", None)
+        )
+        assert "--model" in args_new
+        model_idx = args_new.index("--model")
+        assert args_new[model_idx + 1] == "gemini-3.8-flash"
+        assert "--effort" in args_new
+        effort_idx = args_new.index("--effort")
+        assert args_new[effort_idx + 1] == "high"
+
+        # 2. Existing session with model and effort -> --model <base>-<effort>
+        resume_token = ResumeToken(engine=ENGINE, value="conv-123")
+        args_resume = runner.build_args(
+            "hi", resume=resume_token, state=runner.new_state("hi", resume_token)
+        )
+        assert "--conversation" in args_resume
+        assert "--model" in args_resume
+        model_idx = args_resume.index("--model")
+        assert args_resume[model_idx + 1] == "gemini-3.8-flash-high"
+        assert "--effort" not in args_resume
+
+    # 3. Model without effort levels (e.g. claude-sonnet-4-6)
+    with apply_run_options(EngineRunOptions(model="claude-sonnet-4-6", reasoning=None)):
+        resume_token = ResumeToken(engine=ENGINE, value="conv-123")
+        args_sonnet = runner.build_args(
+            "hi", resume=resume_token, state=runner.new_state("hi", resume_token)
+        )
+        assert "--model" in args_sonnet
+        model_idx = args_sonnet.index("--model")
+        assert args_sonnet[model_idx + 1] == "claude-sonnet-4-6"
+        assert "--effort" not in args_sonnet
