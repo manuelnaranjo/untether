@@ -23,7 +23,7 @@ PERMISSION_MODE_SUPPORTED_ENGINES = frozenset({"claude", "codex", "antigravity"}
 
 DIFF_PREVIEW_SUPPORTED_ENGINES = frozenset({"claude"})
 
-SUBSCRIPTION_USAGE_SUPPORTED_ENGINES = frozenset({"claude"})
+SUBSCRIPTION_USAGE_SUPPORTED_ENGINES = frozenset({"claude", "antigravity"})
 
 API_COST_SUPPORTED_ENGINES = frozenset({"claude", "opencode", "antigravity", "amp"})
 

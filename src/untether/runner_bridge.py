@@ -644,17 +644,25 @@ async def _maybe_append_usage_footer(
     msg: RenderedMessage,
     *,
     always_show: bool = False,
+    engine: str = "claude",
+    conversation_id: str | None = None,
 ) -> RenderedMessage:
-    """Fetch Claude Code usage and append a footer.
+    """Fetch Claude Code or Antigravity usage and append a footer.
 
     When *always_show* is True, always appends a compact usage line.
     When False (default), only appends warnings at >=70% threshold.
     """
     try:
         from .telegram.commands.usage import _time_until, format_usage_compact
-        from .utils.usage_cache import fetch_claude_usage_cached
 
-        data = await fetch_claude_usage_cached()
+        if engine == "antigravity":
+            from .utils.usage_cache import fetch_antigravity_usage_cached
+
+            data = await fetch_antigravity_usage_cached(conversation_id=conversation_id)
+        else:
+            from .utils.usage_cache import fetch_claude_usage_cached
+
+            data = await fetch_claude_usage_cached()
         _validate_usage_schema(data)
 
         if always_show:
@@ -3966,16 +3974,22 @@ async def handle_message(
                 extra=final_rendered.extra,
             )
 
-        # Append usage footer for Claude Code engine runs
-        if runner.engine == "claude":
+        # Append usage footer for supported engines (Claude Code, Antigravity)
+        from .telegram.engine_overrides import SUBSCRIPTION_USAGE_SUPPORTED_ENGINES
+
+        if runner.engine in SUBSCRIPTION_USAGE_SUPPORTED_ENGINES:
             _show_sub = footer_cfg.show_subscription_usage
             if (
                 _footer_run_opts
                 and _footer_run_opts.show_subscription_usage is not None
             ):
                 _show_sub = _footer_run_opts.show_subscription_usage
+            _active_session = final_resume.value if final_resume else resume_value
             final_rendered = await _maybe_append_usage_footer(
-                final_rendered, always_show=_show_sub
+                final_rendered,
+                always_show=_show_sub,
+                engine=runner.engine,
+                conversation_id=_active_session,
             )
 
         logger.debug(
@@ -4101,8 +4115,10 @@ async def handle_message(
             answer=err_body,
         )
 
-        # Append usage footer for Claude Code engine runs (even on error)
-        if runner.engine == "claude":
+        # Append usage footer for supported engines (even on error)
+        from .telegram.engine_overrides import SUBSCRIPTION_USAGE_SUPPORTED_ENGINES
+
+        if runner.engine in SUBSCRIPTION_USAGE_SUPPORTED_ENGINES:
             footer_cfg = _load_footer_settings()
             from .runners.run_options import get_run_options
 
@@ -4110,8 +4126,12 @@ async def handle_message(
             _show_sub = footer_cfg.show_subscription_usage
             if _err_run_opts and _err_run_opts.show_subscription_usage is not None:
                 _show_sub = _err_run_opts.show_subscription_usage
+            _active_session = outcome.resume.value if outcome.resume else None
             final_rendered = await _maybe_append_usage_footer(
-                final_rendered, always_show=_show_sub
+                final_rendered,
+                always_show=_show_sub,
+                engine=runner.engine,
+                conversation_id=_active_session,
             )
 
         logger.debug(
