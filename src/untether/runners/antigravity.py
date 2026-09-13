@@ -110,20 +110,39 @@ def _antigravity_tool_kind_and_title(
     """Normalise Antigravity tool names then delegate to shared helper."""
     normalised = _TOOL_NAME_MAP.get(tool_name, tool_name.lower())
     input_copy = dict(tool_input)
-    if normalised in {"bash", "shell"} and "CommandLine" in input_copy and "command" not in input_copy:
+    if (
+        normalised in {"bash", "shell"}
+        and "CommandLine" in input_copy
+        and "command" not in input_copy
+    ):
         input_copy["command"] = input_copy["CommandLine"]
-    if normalised in {"glob", "grep"} and "Pattern" in input_copy and "pattern" not in input_copy:
+    if (
+        normalised in {"glob", "grep"}
+        and "Pattern" in input_copy
+        and "pattern" not in input_copy
+    ):
         input_copy["pattern"] = input_copy["Pattern"]
     if normalised == "grep" and "Query" in input_copy and "pattern" not in input_copy:
         input_copy["pattern"] = input_copy["Query"]
-    if normalised == "websearch" and "query" not in input_copy and "Query" in input_copy:
+    if (
+        normalised == "websearch"
+        and "query" not in input_copy
+        and "Query" in input_copy
+    ):
         input_copy["query"] = input_copy["Query"]
     if normalised == "webfetch" and "url" not in input_copy and "Url" in input_copy:
         input_copy["url"] = input_copy["Url"]
     return tool_kind_and_title(
         normalised,
         input_copy,
-        path_keys=("TargetFile", "AbsolutePath", "DirectoryPath", "file_path", "path", "filePath"),
+        path_keys=(
+            "TargetFile",
+            "AbsolutePath",
+            "DirectoryPath",
+            "file_path",
+            "path",
+            "filePath",
+        ),
         task_kind="subagent",
     )
 
@@ -213,7 +232,9 @@ def translate_antigravity_event(
             state.session_id = su.conversation_id
 
         if su.step_type == "tool":
-            tool_id = str(su.step_index if su.step_index is not None else su.tool_name or "tool")
+            tool_id = str(
+                su.step_index if su.step_index is not None else su.tool_name or "tool"
+            )
             tool_name = su.tool_name or (su.tool_info.name if su.tool_info else "tool")
             parameters = (
                 su.tool_info.parameters
@@ -236,7 +257,9 @@ def translate_antigravity_event(
                     detail["changes"] = [{"path": path, "kind": "update"}]
 
             if su.state == "ACTIVE":
-                action = Action(id=tool_id, kind=kind, title=action_title, detail=detail)
+                action = Action(
+                    id=tool_id, kind=kind, title=action_title, detail=detail
+                )
                 state.pending_actions[tool_id] = action
                 out.append(_action_event(phase="started", action=action))
             elif su.state == "DONE":
@@ -244,7 +267,9 @@ def translate_antigravity_event(
                 action_to_use = (
                     pending
                     if pending is not None
-                    else Action(id=tool_id, kind=kind, title=action_title, detail=detail)
+                    else Action(
+                        id=tool_id, kind=kind, title=action_title, detail=detail
+                    )
                 )
                 final_detail = dict(action_to_use.detail)
                 if output is not None:
@@ -257,7 +282,9 @@ def translate_antigravity_event(
                     title=action_to_use.title,
                     detail=final_detail,
                 )
-                out.append(_action_event(phase="completed", action=completed_action, ok=True))
+                out.append(
+                    _action_event(phase="completed", action=completed_action, ok=True)
+                )
             return out
 
         if su.step_type == "agent_response":
@@ -292,7 +319,9 @@ def translate_antigravity_event(
         )
         if not state.emitted_started:
             state.emitted_started = True
-            started_resume = resume or ResumeToken(engine=ENGINE, value=state.session_id or "")
+            started_resume = resume or ResumeToken(
+                engine=ENGINE, value=state.session_id or ""
+            )
             out.append(
                 StartedEvent(
                     engine=ENGINE,
@@ -427,10 +456,30 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         model = self.model
         if run_options is not None and run_options.model:
             model = run_options.model
-        if model:
-            args.extend(["--model", str(model)])
+        effort = None
         if run_options is not None and run_options.reasoning:
-            args.extend(["--effort", str(run_options.reasoning)])
+            effort = run_options.reasoning
+
+        if model:
+            match = re.match(r"^(.*?)-(low|medium|high)$", str(model))
+            base_model = match.group(1) if match else str(model)
+            effective_effort = (
+                str(effort) if effort else (match.group(2) if match else None)
+            )
+
+            if resume is None:
+                # New session: agy --model <model> --effort <effort>
+                args.extend(["--model", base_model])
+                if effective_effort:
+                    args.extend(["--effort", effective_effort])
+            else:
+                # Existing session: /model <model>-<effort>
+                if effective_effort and match is None:
+                    args.extend(["--model", f"{base_model}-{effective_effort}"])
+                else:
+                    args.extend(["--model", str(model)])
+        elif effort:
+            args.extend(["--effort", str(effort)])
         if run_options is not None and run_options.permission_mode:
             pm = run_options.permission_mode
             if pm == "plan":
@@ -451,8 +500,12 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
     ) -> bytes | None:
         return None
 
-    def new_state(self, prompt: str, resume: ResumeToken | None) -> AntigravityStreamState:
-        session_id = resume.value if resume is not None and not resume.is_continue else None
+    def new_state(
+        self, prompt: str, resume: ResumeToken | None
+    ) -> AntigravityStreamState:
+        session_id = (
+            resume.value if resume is not None and not resume.is_continue else None
+        )
         return AntigravityStreamState(session_id=session_id)
 
     def start_run(
