@@ -177,11 +177,11 @@ class TestPlanModeEngineGate:
         assert "approval policy" in result.text.lower()
 
     @pytest.mark.anyio
-    async def test_planmode_blocked_for_gemini_with_config_hint(self):
+    async def test_planmode_blocked_for_antigravity_with_config_hint(self):
         ctx = FakeCommandContext(
             args_text="on",
             config_path=Path("/tmp/fake.toml"),
-            runtime=FakeTransportRuntime(default_engine="gemini"),
+            runtime=FakeTransportRuntime(default_engine="antigravity"),
         )
         cmd = PlanModeCommand()
         result = await cmd.handle(ctx)  # type: ignore[arg-type]

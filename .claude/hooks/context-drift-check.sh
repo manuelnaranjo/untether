@@ -35,7 +35,7 @@ if [ -f "$THROTTLE_FILE" ]; then
 fi
 
 # Context files to check
-CONTEXT_FILES=("CLAUDE.md" "AGENTS.md" "GEMINI.md" ".cursorrules"
+CONTEXT_FILES=("CLAUDE.md" "AGENTS.md" "ANTIGRAVITY.md" ".cursorrules"
                ".github/copilot-instructions.md" ".windsurfrules" ".clinerules")
 
 STALE=()

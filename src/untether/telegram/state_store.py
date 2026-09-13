@@ -32,7 +32,7 @@ class JsonStateStore[T: _VersionedState]:
         self._path = path
         self._lock = anyio.Lock()
         self._loaded = False
-        self._mtime_ns: int | None = None
+        self._file_sig: tuple[int, int, int] | None = None
         self._state_type = state_type
         self._state_factory = state_factory
         self._version = version
@@ -40,22 +40,23 @@ class JsonStateStore[T: _VersionedState]:
         self._logger = logger
         self._state = state_factory()
 
-    def _stat_mtime_ns(self) -> int | None:
+    def _stat_signature(self) -> tuple[int, int, int] | None:
         try:
-            return self._path.stat().st_mtime_ns
+            st = self._path.stat()
+            return (st.st_mtime_ns, st.st_ino, st.st_size)
         except FileNotFoundError:
             return None
 
     def _reload_locked_if_needed(self) -> None:
-        current = self._stat_mtime_ns()
-        if self._loaded and current == self._mtime_ns:
+        current = self._stat_signature()
+        if self._loaded and current == self._file_sig:
             return
         self._load_locked()
 
     def _load_locked(self) -> None:
         self._loaded = True
-        self._mtime_ns = self._stat_mtime_ns()
-        if self._mtime_ns is None:
+        self._file_sig = self._stat_signature()
+        if self._file_sig is None:
             self._state = self._state_factory()
             return
         try:
@@ -85,4 +86,4 @@ class JsonStateStore[T: _VersionedState]:
     def _save_locked(self) -> None:
         payload = msgspec.to_builtins(self._state)
         atomic_write_json(self._path, payload)
-        self._mtime_ns = self._stat_mtime_ns()
+        self._file_sig = self._stat_signature()
