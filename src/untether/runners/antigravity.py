@@ -82,6 +82,7 @@ class AntigravityStreamState:
     emitted_started: bool = False
     model: str | None = None
     saw_result: bool = False
+    command_usage: dict[str, Any] | None = None
 
 
 def _action_event(
@@ -289,6 +290,19 @@ def translate_antigravity_event(
             status=status,
             answer_len=len(answer),
         )
+        if not state.emitted_started:
+            state.emitted_started = True
+            started_resume = resume or ResumeToken(engine=ENGINE, value=state.session_id or "")
+            out.append(
+                StartedEvent(
+                    engine=ENGINE,
+                    resume=started_resume,
+                    title=title,
+                    meta=meta or None,
+                )
+            )
+        if res.command and res.command.data:
+            state.command_usage = res.command.data
         if status == "SUCCESS":
             out.append(
                 CompletedEvent(
@@ -309,6 +323,25 @@ def translate_antigravity_event(
                     resume=resume,
                     usage=usage,
                     error=error,
+                )
+            )
+        return out
+
+    if isinstance(event, antigravity_schema.CommandResult):
+        if event.command and event.command.data:
+            state.command_usage = event.command.data
+        if not state.emitted_started:
+            state.emitted_started = True
+            started_resume = ResumeToken(engine=ENGINE, value=state.session_id or "")
+            meta_dict = dict(meta) if meta else {}
+            if state.model:
+                meta_dict["model"] = state.model
+            out.append(
+                StartedEvent(
+                    engine=ENGINE,
+                    resume=started_resume,
+                    title=title,
+                    meta=meta_dict or None,
                 )
             )
         return out
@@ -419,7 +452,8 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         return None
 
     def new_state(self, prompt: str, resume: ResumeToken | None) -> AntigravityStreamState:
-        return AntigravityStreamState()
+        session_id = resume.value if resume is not None and not resume.is_continue else None
+        return AntigravityStreamState(session_id=session_id)
 
     def start_run(
         self,
@@ -545,7 +579,19 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         state: AntigravityStreamState,
         stderr_lines: list[str] | None = None,
     ) -> list[UntetherEvent]:
-        if not found_session:
+        effective_session = found_session or resume
+        if state.saw_result:
+            return [
+                CompletedEvent(
+                    engine=ENGINE,
+                    ok=True,
+                    answer=state.last_text or "",
+                    resume=effective_session,
+                    usage=None,
+                )
+            ]
+
+        if not effective_session:
             parts = ["antigravity finished but no session_id was captured"]
             session = _session_label(None, resume)
             if session:
@@ -562,19 +608,8 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
                 )
             ]
 
-        if state.saw_result:
-            return [
-                CompletedEvent(
-                    engine=ENGINE,
-                    ok=True,
-                    answer=state.last_text or "",
-                    resume=found_session,
-                    usage=None,
-                )
-            ]
-
         parts = ["antigravity finished without a result event"]
-        session = _session_label(found_session, resume)
+        session = _session_label(effective_session, resume)
         if session:
             parts.append(f"session: {session}")
         message = "\n".join(parts)
@@ -583,7 +618,7 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
                 engine=ENGINE,
                 ok=False,
                 answer=state.last_text or "",
-                resume=found_session,
+                resume=effective_session,
                 error=message,
             )
         ]

@@ -61,6 +61,15 @@ class ResultUsage(msgspec.Struct, forbid_unknown_fields=False):
     total_tokens: int | None = None
 
 
+class CommandPayload(msgspec.Struct, forbid_unknown_fields=False):
+    name: str | None = None
+    data: dict[str, Any] | None = None
+
+
+class CommandResult(_Event, tag="command_result"):
+    command: CommandPayload | None = None
+
+
 class ResultPayload(msgspec.Struct, forbid_unknown_fields=False):
     conversation_id: str | None = None
     status: str | None = None
@@ -68,6 +77,7 @@ class ResultPayload(msgspec.Struct, forbid_unknown_fields=False):
     duration_seconds: float | None = None
     num_turns: int | None = None
     usage: ResultUsage | None = None
+    command: CommandPayload | None = None
     error: str | None = None
 
 
@@ -80,7 +90,7 @@ class Error(_Event, tag="error"):
     error: str | None = None
 
 
-type AntigravityEvent = Init | StepUpdate | AntigravityResult | Error
+type AntigravityEvent = Init | StepUpdate | AntigravityResult | CommandResult | Error
 
 _DECODER = msgspec.json.Decoder(AntigravityEvent)
 

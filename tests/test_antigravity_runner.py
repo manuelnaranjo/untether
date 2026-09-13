@@ -1,6 +1,8 @@
+import asyncio
 from pathlib import Path
 
 import msgspec
+import pytest
 
 from untether.model import ActionEvent, CompletedEvent, ResumeToken, StartedEvent
 from untether.runners.antigravity import (
@@ -498,4 +500,79 @@ def test_build_runner_invalid_cmd_raises(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match=r"Invalid `antigravity\.cmd`"):
         build_runner({"cmd": 12345}, tmp_path / "untether.toml")
+
+
+def test_decode_command_result_event() -> None:
+    raw = b'{"event":"command_result","command":{"name":"usage","data":{"groups":[{"name":"Gemini"}]}}}'
+    evt = antigravity_schema.decode_event(raw)
+    assert isinstance(evt, antigravity_schema.CommandResult)
+    assert evt.command is not None
+    assert evt.command.name == "usage"
+    assert evt.command.data == {"groups": [{"name": "Gemini"}]}
+
+
+def test_translate_command_result_event() -> None:
+    state = AntigravityStreamState()
+    raw = b'{"event":"command_result","command":{"name":"usage","data":{"groups":[{"name":"Gemini"}]}}}'
+    evt = antigravity_schema.decode_event(raw)
+    events = translate_antigravity_event(evt, title="antigravity", state=state, meta=None)
+
+    assert len(events) == 1
+    assert isinstance(events[0], StartedEvent)
+    assert state.command_usage == {"groups": [{"name": "Gemini"}]}
+
+
+def test_format_antigravity_usage() -> None:
+    from untether.telegram.commands.usage import format_antigravity_usage
+
+    data = {
+        "groups": [
+            {
+                "name": "Gemini Models",
+                "buckets": [
+                    {
+                        "name": "Five Hour Limit Remaining",
+                        "remaining_fraction": 0.4,
+                        "reset_time": "2030-01-01T00:00:00Z",
+                    },
+                    {
+                        "name": "Weekly Limit Remaining",
+                        "remaining_fraction": 0.7,
+                        "reset_time": "2030-01-08T00:00:00Z",
+                    },
+                ],
+            }
+        ]
+    }
+    formatted = format_antigravity_usage(data)
+    assert "Gemini Models" in formatted
+    assert "Five Hour Limit Remaining" in formatted
+    assert "60%" in formatted
+    assert "40% left" in formatted
+
+
+@pytest.mark.anyio
+async def test_fetch_antigravity_usage_parsing(monkeypatch) -> None:
+    from untether.telegram.commands.usage import fetch_antigravity_usage
+
+    output_lines = [
+        '{"event":"command_result","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":0.3,"reset_time":"2030-01-01T00:00:00Z"}]}]}}}\n',
+        '{"event":"result","result":{"status":"SUCCESS","response":"ok"}}\n',
+    ]
+
+    class FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return "".join(output_lines).encode("utf-8"), b""
+
+    monkeypatch.setattr(
+        asyncio, "create_subprocess_exec", lambda *a, **kw: asyncio.sleep(0, result=FakeProc())
+    )
+    monkeypatch.setattr("shutil.which", lambda _c: "/usr/bin/agy")
+
+    res = await fetch_antigravity_usage(conversation_id="conv123")
+    assert res["engine"] == "antigravity"
+    assert len(res["groups"]) == 1
+    assert res["five_hour"] == {"utilization": 70.0, "resets_at": "2030-01-01T00:00:00Z"}
 
