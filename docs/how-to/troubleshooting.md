@@ -80,8 +80,8 @@ npm install -g opencode-ai@latest
 # Pi
 npm install -g @mariozechner/pi-coding-agent
 
-# Gemini CLI — DEPRECATED, see below
-npm install -g @google/gemini-cli
+# Antigravity CLI
+# Follow official agy installation instructions
 
 # Amp — DEPRECATED, see below
 npm install -g @sourcegraph/amp
@@ -99,18 +99,16 @@ The startup message lists engines that are `not installed`, `misconfigured` or `
 - **Claude Code:** Run `claude login` to authenticate. On macOS, credentials are stored in Keychain; on Linux, in `~/.claude/.credentials.json`
 - **OpenCode:** Run `opencode` and authenticate with your chosen provider
 - **Pi:** Run `pi` and log in with your provider
-- **Gemini CLI** (⚠️ deprecated): see below — individual Google accounts (free, Google AI Pro and Ultra) can no longer authenticate at all
-- **Amp** (⚠️ deprecated): see below — `amp login` still works, but the client version is refused remotely
+- **Antigravity CLI:** Run `agy` and complete setup
+- **Amp** (⚠️ deprecated): `amp login` still works, but the client version is refused remotely
 
-## Why does my Gemini run stall, or my Amp run fail immediately?
+## Why does my Amp run fail immediately?
 
-Both engines are **deprecated** and currently non-functional on ordinary accounts.
-They fail in two different ways.
+Amp is **deprecated** and currently non-functional on ordinary accounts.
 
-Confirm by running the CLI directly — both exit non-zero:
+Confirm by running the CLI directly:
 
 ```bash
-gemini --output-format stream-json --prompt="say OK"   # exits 1
 amp -x "say OK"                                        # exits 1
 ```
 
@@ -131,32 +129,6 @@ track that cadence.
 Note `amp threads list` (and therefore `/threads`) is a **local** command that
 does not hit the version gate — `/threads` can list threads normally while
 `amp -x` is refused.
-
-### Gemini — stalls instead of failing
-
-**Symptom:** the progress message sits at `starting · gemini` and never advances.
-Eventually the stall watchdog fires and you get
-`Auto-cancelled: session appears stuck (max_warnings)` — typically after about
-half an hour.
-
-Run standalone, `gemini` prints `IneligibleTierError: This client is no longer
-supported for Gemini Code Assist for individuals` and exits 1. Spawned by
-Untether, the subprocess instead **hangs** without exiting, so Untether sees no
-events and no exit — hence the stall rather than an error message. Filed as
-[#724](https://github.com/littlebearapps/untether/issues/724) and closed as
-**won't fix**, because the engine is deprecated.
-
-Gemini CLI reached **end-of-life for individual Google accounts (free, Google AI Pro and Ultra) on
-18 June 2026** ([Google's announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)). There is no fix — migrate to
-[Antigravity CLI](https://antigravity.google) (Untether support is planned as a
-separate engine) or use a supported engine. Enterprise / Google Cloud licences
-may still work, but Untether no longer verifies this.
-
-### What to do
-
-Both engines are targeted for removal in 0.36.0 — see
-[deprecated engines](https://github.com/littlebearapps/untether#deprecated-engines).
-Switch to `claude`, `codex`, `opencode`, or `pi` via `/config → Engine & model`.
 
 ## Progress stuck on "starting"
 
@@ -666,19 +638,19 @@ Untether recognises **77 error patterns**, grouped like this:
 | Unsupported client | Engine refuses this client version, Gemini individual-tier end-of-life | AMP, Gemini |
 | CLI flag and config drift | A flag the installed CLI rejects, a retired Codex config value | Codex |
 | Authentication | API key missing/invalid, token refresh, login required | All |
-| Subscription & billing | Usage limits, quota exceeded, billing hard limit | Claude, Codex, OpenCode, Gemini |
+| Subscription & billing | Usage limits, quota exceeded, billing hard limit | Claude, Codex, OpenCode, Antigravity |
 | API overload & server | 500/502/503/504, overloaded | All |
 | Rate limits | Rate limited, too many requests | All |
 | Model errors | Model not found, invalid model | All |
 | Context length | Context too long, max tokens exceeded | Claude, Codex, OpenCode |
-| Content safety | Content filter, safety block, prompt blocked | Claude, Gemini |
+| Content safety | Content filter, safety block, prompt blocked | Claude, Antigravity |
 | Reasoning level | `reasoning.effort` not supported by the model or with web search | Codex |
 | Invalid request | Malformed API request | Claude, Codex |
 | Network & SSL | DNS, timeout, connection refused, certificate errors | All |
 | CLI & filesystem | Command not found, disk full, permission denied | All |
 | Signals | SIGTERM, SIGKILL, SIGABRT | All |
 | Process & session | No result event, no session ID, execution errors | All |
-| Engine-specific | AMP credits/login, Gemini result status | AMP, Gemini |
+| Engine-specific | AMP credits/login, Antigravity result status | AMP, Antigravity |
 | Account & proxy | Account suspended, proxy auth, request timeout | All |
 
 For the full list of patterns and hints, see the [Error Reference](../reference/errors.md).

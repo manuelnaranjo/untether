@@ -1,6 +1,6 @@
 # Agent preamble
 
-Untether injects a context preamble at the start of the prompt for every new run (including a resumed session), telling the engine it's running via Telegram and requesting structured end-of-task summaries. Follow-ups and steers sent into a Claude session that is still open don't repeat it; the session already has it. This works across all engines (Claude Code, Codex, OpenCode, Pi, and the deprecated Gemini CLI and Amp).
+Untether injects a context preamble at the start of the prompt for every new run (including a resumed session), telling the engine it's running via Telegram and requesting structured end-of-task summaries. Follow-ups and steers sent into a Claude session that is still open don't repeat it; the session already has it. This works across all engines (Claude Code, Codex, OpenCode, Pi, Antigravity CLI, and the deprecated Amp).
 
 ## What the default preamble does
 

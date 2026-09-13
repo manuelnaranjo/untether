@@ -16,9 +16,9 @@ Structured, repeatable integration test process run against `@untether_dev_bot` 
 | | Details |
 |---|---|
 | **Dev service** | `untether-dev.service` → `@untether_dev_bot` |
-| **Test projects** | `test-projects/test-{claude,codex,opencode,pi}/` (plus deprecated `test-{gemini,amp}/`) |
-| **Test chats** | 6 dedicated Telegram groups in the `ut-dev` folder, one per engine (2 deprecated) |
-| **Engines** | Claude, Codex, OpenCode, Pi (⚠️ Gemini, Amp — deprecated, opt-in only) |
+| **Test projects** | `test-projects/test-{claude,codex,opencode,pi,antigravity}/` (plus deprecated `test-amp/`) |
+| **Test chats** | 6 dedicated Telegram groups in the `ut-dev` folder, one per engine |
+| **Engines** | Claude, Codex, OpenCode, Pi, Antigravity (⚠️ Amp — deprecated) |
 
 ## Automated Testing via Telegram MCP
 
@@ -41,7 +41,7 @@ For DM-only tests (commands, `/at`, `/cancel`), use Nathan's personal DM chat ID
 | Codex CLI | `4929463515` | `-4929463515` |
 | OpenCode | `5200822877` | `-5200822877` |
 | Pi | `5156256333` | `-5156256333` |
-| Gemini CLI | `5207762142` | `-5207762142` |
+| Antigravity CLI | `5207762142` | `-5207762142` |
 | AMP CLI | `5230875989` | `-5230875989` |
 
 > **Note:** The Telegram MCP (Telethon) accepts both positive and negative chat IDs.
@@ -84,16 +84,16 @@ These tests were previously considered "manual" but can be automated via MCP and
 
 ## Engine Feature Matrix
 
-| Capability | Claude | Codex | OpenCode | Pi | Gemini ⚠️ | Amp ⚠️ |
+| Capability | Claude | Codex | OpenCode | Pi | Antigravity | Amp ⚠️ |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Support status** | Yes | Yes | Yes | Yes | Deprecated | Deprecated |
+| **Support status** | Yes | Yes | Yes | Yes | Yes | Deprecated |
 | Interactive approval | Yes | - | - | - | Flag only | - |
 | Plan mode | Yes | - | - | - | - | - |
 | Ask questions | Yes | - | - | - | - | - |
 | Resume/continue | Yes | Yes | Yes | Yes | Yes | Yes |
 | Model override | Yes | Yes | Yes | Yes | Yes | Yes |
-| Reasoning levels | Yes | Yes | - | - | - | - |
-| API cost tracking | Yes | - | Yes | - | Yes | Yes |
+| Reasoning levels | Yes | Yes | - | - | Yes | - |
+| API cost tracking | Yes | - | Yes | - | - | Yes |
 | Subscription usage | Yes | - | - | - | - | - |
 | Diff preview | Yes | - | - | - | - | - |
 
@@ -101,11 +101,10 @@ These tests were previously considered "manual" but can be automated via MCP and
 
 ## Test Tiers
 
-### Tier 1: Universal Tests (all 4 supported engines)
+### Tier 1: Universal Tests (all 5 supported engines)
 
 Run in every supported engine's dedicated chat. Validates the core event pipeline.
-The deprecated `gemini` and `amp` chats are excluded — they cannot pass U1 and are
-not required at any tier.
+The deprecated `amp` chat is excluded — it cannot pass U1 and is not required at any tier.
 
 | # | Test | What to send | What to verify | Catches |
 |---|------|-------------|----------------|---------|
@@ -160,8 +159,8 @@ Tests for per-chat and per-topic settings that affect run behaviour. Use forum t
 
 | # | Test | What to send | What to verify | Catches |
 |---|------|-------------|----------------|---------|
-| O1 | **Engine override** | `/agent set opencode`, then send a plain prompt (no directive) | OpenCode runs, footer shows OpenCode model | Per-chat engine default, override hierarchy |
-| O2 | **Reasoning level** | `/config` → Reasoning → pick a level (e.g. Low), then send a prompt (Claude and Codex only) | Reasoning model used, footer reflects it | Reasoning flag in build_args |
+| O1 | **Engine override** | `/agent set antigravity`, then send a plain prompt (no directive) | Antigravity runs, footer shows Antigravity model | Per-chat engine default, override hierarchy |
+| O2 | **Reasoning level** | `/config` → Reasoning → pick a level (e.g. Low), then send a prompt (Claude, Codex, Antigravity) | Reasoning model used, footer reflects it | Reasoning flag in build_args |
 | O3 | **Listen mode** | `/listen mentions` in group, send plain text, then `@bot do something` | Plain text ignored, @mention triggers run | Listen mode filtering (renamed from `/trigger` in v0.35.3 [#297](https://github.com/littlebearapps/untether/issues/297); deprecated alias still works) |
 | O4 | **Ask mode toggle** | `/config` → ❓ Ask mode → off, send prompt that would trigger AskUserQuestion | Question auto-denied instead of shown | Ask mode auto-deny path |
 | O5 | **Context set** | `/ctx set test-claude main`, send prompt | Run uses test-claude project on main branch | Context resolution, project switching |

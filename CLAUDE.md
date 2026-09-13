@@ -1,6 +1,6 @@
 # Untether
 
-Telegram bridge for Claude Code, Codex, OpenCode, Pi and other agent CLIs — control coding agents from your phone.
+Telegram bridge for Claude Code, Codex, OpenCode, Pi, Antigravity CLI, and other agent CLIs — control coding agents from your phone.
 **Repo**: [littlebearapps/untether](https://github.com/littlebearapps/untether) · **Upstream**: [banteg/takopi](https://github.com/banteg/takopi).
 Untether adds interactive permission control (Telegram approval buttons, plan mode, AskUserQuestion), live sessions,
 cost/usage tracking and many UX fixes. Interactive features are **Claude Code-only**; other engines run non-interactively.
@@ -27,7 +27,7 @@ Area rules in `.claude/rules/` load automatically when you read matching files; 
 ## Architecture
 
 ```
-Telegram <-> TelegramPresenter <-> RunnerBridge <-> Runner (claude/codex/opencode/pi/gemini/amp)
+Telegram <-> TelegramPresenter <-> RunnerBridge <-> Runner (claude/codex/opencode/pi/antigravity/amp)
                                        |
                                   ProgressTracker
 ```
@@ -39,13 +39,10 @@ Telegram <-> TelegramPresenter <-> RunnerBridge <-> Runner (claude/codex/opencod
 - **Schemas** (`src/untether/schemas/`) — msgspec structs for JSONL; **Triggers** (`src/untether/triggers/`) — cron/webhooks
 - Config: `untether.toml` (with `watch_config = true` most sections hot-reload — off by default; `bot_token`, `chat_id`, `session_mode`, `topics`, `message_overflow` need a restart, as does turning `[triggers] enabled` on)
 
-## Deprecated engines (Gemini CLI, AMP)
+## Engines
 
-Both still load but are unsupported and **removed in 0.36.0** (Gemini: upstream EOL for individual accounts, hangs under
-Untether until the watchdog cancels; AMP: remote `426` refusal). **When a cross-engine sweep breaks either runner,
-`xfail`/`skip` the test — do NOT fix the runner.** Security and doc-accuracy fixes still apply. Both are excluded from
-every integration-test tier. Antigravity CLI (#558, planned for v0.35.6) is a new engine and must not reuse the
-`gemini` id.
+- Supported: Claude Code, Codex, OpenCode, Pi, Antigravity CLI (`agy`)
+- Amp is deprecated.
 
 ## Commands
 

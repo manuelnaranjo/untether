@@ -155,8 +155,6 @@ This validates:
 - File transfer settings (enabled, `allowed_user_ids`)
 - Voice transcription has an API key
 
-It doesn't check engine CLIs; the startup message lists engines that are `not installed`, `misconfigured` or `failed to load`. `untether doctor` exits with status 1 if any check reports an error.
-
 It doesn't check engine CLIs or deny globs: the startup message lists engines that are missing, misconfigured or failed to load.
 
 Run this after any config change, after upgrading, or when something isn't working.

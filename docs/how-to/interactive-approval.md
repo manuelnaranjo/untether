@@ -151,23 +151,17 @@ This is a pre-run policy — Codex doesn't pause mid-run to ask for permission. 
 !!! note "Before v0.35.5"
     Safe used to pass `--ask-for-approval untrusted`. `codex exec` never applied that flag, so Safe ran exactly like Full auto, and codex-cli 0.149.0+ rejects it outright, so every Safe run failed at startup ([#830](https://github.com/littlebearapps/untether/issues/830)).
 
-### Gemini CLI — Approval mode
-
-!!! warning "Deprecated"
-    Gemini CLI is deprecated in Untether and targeted for removal in 0.36.0. See [Switch engines](switch-engines.md).
+### Antigravity CLI — Approval mode
 
 Toggle via `/config` → **Approval mode**:
 
 | Mode | CLI flag | Behaviour |
 |------|----------|-----------|
-| **Read-only** (shown when no mode is set) | `--approval-mode yolo` | **Not actually read-only** — see the warning below |
-| **Edit files** | `--approval-mode auto_edit` | File reads and writes OK, shell commands blocked |
-| **Full access** | `--approval-mode yolo` | All tools approved — full autonomy |
+| **Read-only** (default) | (none) | Permissions enforced per settings |
+| **Edit files** | `--mode accept-edits` | File changes accepted |
+| **Full access** | `--dangerously-skip-permissions` | All tools auto-approved — full autonomy |
 
-This is also a pre-run policy. Gemini CLI doesn't have interactive mid-run approval.
-
-!!! warning "Read-only runs with full access"
-    With no approval mode set, Untether starts Gemini CLI with `--approval-mode yolo`, so every tool is approved. The **Read-only** button in `/config` only clears the chat's setting, which lands back on that same default; it does not restrict Gemini. Use **Edit files** if you need shell commands blocked. The Gemini engine is deprecated and won't get a read-only mode before it is removed.
+This is also a pre-run policy. Antigravity CLI doesn't have interactive mid-run approval in headless mode.
 
 Both policies persist per chat via `/config` and can be cleared back to the default. See [Inline settings](inline-settings.md) for the full `/config` menu reference.
 

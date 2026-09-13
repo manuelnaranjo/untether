@@ -93,10 +93,13 @@ LEGACY_CLAUDE_PLAN_AUTO_MODE = "auto"
 # time, while staying forward-compatible for engines not yet listed (the
 # validator accepts any non-empty string for those).
 # Extending this dict requires auditing the runner to ensure each value maps to
-# a defined CLI / protocol outcome — see issues #331 (Codex + Gemini completion)
+# a defined CLI / protocol outcome — see issues #331 (Codex + Antigravity completion)
 # and #332 (full cross-engine extension).
 VALID_PERMISSION_MODES_BY_ENGINE: dict[str, frozenset[str]] = {
     "claude": CLAUDE_CLI_PERMISSION_MODES | {CLAUDE_PLAN_AUTO_MODE},
+    "antigravity": frozenset(
+        {"default", "plan", "accept-edits", "acceptEdits", "auto", "bypassPermissions"}
+    ),
 }
 
 

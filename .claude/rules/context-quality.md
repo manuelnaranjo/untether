@@ -42,4 +42,4 @@ critical constraints. When you change one, grep the others for the same fact.
 - Every path you mention must exist: `test -e path || echo "WARN: $path missing"`.
 - Every command you list must run (check `pyproject.toml`, `scripts/`, `.github/workflows/`).
 - Versions (Python, ruff, pytest, engine CLIs) come from `pyproject.toml` / lockfiles, never memory.
-- `AGENTS.md` is read by Codex/OpenCode/Gemini/Pi; `CLAUDE.md` and `.claude/rules/*` are Claude Code only.
+- `AGENTS.md` is read by Codex/OpenCode/Antigravity/Pi; `CLAUDE.md` and `.claude/rules/*` are Claude Code only.

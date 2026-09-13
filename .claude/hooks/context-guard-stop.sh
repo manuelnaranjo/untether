@@ -69,7 +69,7 @@ done <<< "$CHANGED_FILES"
 HAS_CONTEXT=false
 while IFS= read -r FILE; do
   case "$FILE" in
-    CLAUDE.md|AGENTS.md|GEMINI.md) HAS_CONTEXT=true; break ;;
+    CLAUDE.md|AGENTS.md|ANTIGRAVITY.md) HAS_CONTEXT=true; break ;;
     .cursorrules|.windsurfrules|.clinerules) HAS_CONTEXT=true; break ;;
     .github/copilot-instructions.md) HAS_CONTEXT=true; break ;;
     llms.txt) HAS_CONTEXT=true; break ;;

@@ -23,7 +23,7 @@ Out of scope:
 
 ## 2. Terminology
 
-- **EngineId**: string identifier of an engine (e.g., `"claude"`, `"codex"`, `"opencode"`, `"pi"`; the deprecated `"gemini"` and `"amp"` still load but are unsupported and are removed in 0.36.0).
+- **EngineId**: string identifier of an engine (e.g., `"claude"`, `"codex"`, `"opencode"`, `"pi"`, `"antigravity"`; the deprecated `"amp"` still loads but is unsupported and is removed in 0.36.0).
 - **Runner**: Untether adapter that executes an engine process and yields **Untether events**.
 - **Thread**: a single engine-side conversation, identified in Untether by a **ResumeToken**.
 - **ResumeToken**: Untether-owned thread identifier `{ engine: EngineId, value: str }`.
@@ -45,7 +45,7 @@ The canonical ResumeLine embedded in chat MUST be the engine’s CLI resume comm
 - `claude --resume <id>`
 - `opencode --session <id>`
 - `pi --session <token>`
-- `gemini --resume <id>` (deprecated engine)
+- `agy --conversation <id>`
 - `amp threads continue <id>` (deprecated engine)
 
 Runners MAY accept additional spellings when extracting (e.g. Claude's `claude -r <id>`, OpenCode's `opencode run --session <id>` / `-s <id>`), but MUST format the canonical form.

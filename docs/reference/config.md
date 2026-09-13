@@ -633,33 +633,35 @@ message) rather than dropping its other settings.
     model = "anthropic/claude-sonnet-5-5"
     ```
 
-### `gemini`
+### `antigravity`
 
 !!! warning "Deprecated — removed in 0.36.0"
     The Gemini CLI engine still loads but is unsupported; the CLI has reached end of life upstream for individual accounts and hangs under Untether until the watchdog cancels the run. Plan a move to another engine.
 
 | Key | Type | Default | Notes |
 |-----|------|---------|-------|
+| `cmd` | string | `"~/.local/bin/agy"` | Path or command name for the Antigravity CLI binary. Defaults to `~/.local/bin/agy` (or `agy` on PATH). |
 | `model` | string | (unset) | Optional model override, passed as `--model`. |
-| `skip_trust` | bool | `true` | Pass `--skip-trust` so headless runs work outside `~/.gemini/trustedFolders.json` ([#471](https://github.com/littlebearapps/untether/issues/471)). Gemini CLI rejects runs from any directory not in the trust list — even with `--approval-mode yolo` — and there is no interactive prompt path in headless usage. Set `false` to enforce Gemini's project-local extension/MCP trust gate. |
+| `dangerously_skip_permissions` | bool | `true` | Pass `--dangerously-skip-permissions` for headless runs so tool permission prompts are auto-approved. |
 
 === "untether config"
 
     ```sh
-    untether config set gemini.model "gemini-2.5-pro"
-    untether config set gemini.skip_trust true
+    untether config set default_engine "antigravity"
+    untether config set antigravity.model "gemini-3.8-flash-high"
+    untether config set antigravity.dangerously_skip_permissions true
     ```
 
 === "toml"
 
     ```toml
-    [gemini]
-    model = "gemini-2.5-pro"
-    skip_trust = true
+    [antigravity]
+    model = "gemini-3.8-flash-high"
+    dangerously_skip_permissions = true
     ```
 
 !!! note "Approval mode"
-    Gemini CLI's approval mode (read-only / edit files / full access) is toggled per chat via `/config` → **Approval mode**, not the config file. Codex CLI's approval policy (full auto / safe) is similarly toggled via `/config` → **Approval policy**: **safe** runs `codex exec` with `--sandbox read-only` (no `--ask-for-approval`, which `codex exec` ignores — [#830](https://github.com/littlebearapps/untether/issues/830)), and **full auto** adds no sandbox flag. See [inline settings](../how-to/inline-settings.md).
+    Antigravity CLI's approval mode (read-only / edit files / full access / plan) is toggled per chat via `/config` → **Approval mode**, not the config file. Codex CLI's approval policy (full auto / safe) is similarly toggled via `/config` → **Approval policy**: **safe** runs `codex exec` with `--sandbox read-only` (no `--ask-for-approval`, which `codex exec` ignores — [#830](https://github.com/littlebearapps/untether/issues/830)), and **full auto** adds no sandbox flag. See [inline settings](../how-to/inline-settings.md).
 
 ### `amp`
 

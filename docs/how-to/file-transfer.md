@@ -163,11 +163,11 @@ All engines support outbox delivery — any agent that can write files to disk c
 | Codex CLI | Yes | — |
 | OpenCode | Yes | — |
 | Pi | Yes | — |
-| Gemini CLI (deprecated) | Yes | Untether runs it with `--approval-mode yolo` unless the chat picks **Edit files**, which can still write files |
+| Antigravity CLI | Yes | Set approval mode via `/config` if needed |
 | AMP (deprecated) | Yes | — |
 
-!!! tip "Gemini CLI permissions"
-    Untether runs Gemini CLI with `--approval-mode yolo` by default (the **Read-only** choice in `/config` → **Approval mode** lands on the same default), so it can create files for the outbox without any setup. See [Interactive approval → Gemini CLI](interactive-approval.md#gemini-cli-approval-mode).
+!!! tip "Antigravity CLI permissions"
+    To enable file creation (and outbox delivery), ensure Antigravity CLI's approval mode is set to "Edit files" or "Full access" via `/config` → **Approval mode** in the chat.
 
 ### Limitations
 

@@ -24,7 +24,7 @@ These are checked first. The end-of-life patterns must outrank the generic `inva
 | `log out and sign in again` | Run `codex login` to re-authenticate. | Codex |
 | `anthropic_api_key` | Check that ANTHROPIC_API_KEY is set in your environment. | Claude, Pi |
 | `openai_api_key` | Check that OPENAI_API_KEY is set in your environment. | Codex, OpenCode |
-| `google_api_key` | Check that your Google API key is set in your environment. | Gemini |
+| `google_api_key` | Check that your Google API key is set in your environment. | Antigravity |
 | `authentication_error` | API key is invalid or expired. Check your API key configuration. | Claude, Pi |
 | `invalid_api_key` / `api_key_invalid` | API key is invalid or expired. Check your API key configuration. | All |
 | `invalid x-api-key` | API key is invalid or expired. Check your API key configuration. | Claude |
@@ -38,7 +38,7 @@ These are checked first. The end-of-life patterns must outrank the generic `inva
 | `insufficient_quota` | OpenAI billing quota exceeded. Check platform.openai.com and add credits. | Codex, OpenCode |
 | `exceeded your current quota` | OpenAI billing quota exceeded. Check platform.openai.com and add credits. | Codex, OpenCode |
 | `billing_hard_limit_reached` | OpenAI billing hard limit reached. Increase your spend limit. | Codex, OpenCode |
-| `resource_exhausted` | Google API quota exhausted. Check console.cloud.google.com. | Gemini |
+| `resource_exhausted` | Google API quota exhausted. Check console.cloud.google.com. | Antigravity |
 
 ## API overload and server errors
 
@@ -80,10 +80,10 @@ These are checked first. The end-of-life patterns must outrank the generic `inva
 
 | Pattern | Hint | Engines |
 |---------|------|---------|
-| `content_filter` | Request blocked by content safety filter. Try rephrasing your prompt. | Claude, Gemini |
-| `harm_category` | Request blocked by content safety filter. Try rephrasing your prompt. | Gemini |
-| `prompt_blocked` | Request blocked by content safety filter. Try rephrasing your prompt. | Gemini |
-| `safety_block` | Request blocked by content safety filter. Try rephrasing your prompt. | Gemini |
+| `content_filter` | Request blocked by content safety filter. Try rephrasing your prompt. | Claude, Antigravity |
+| `harm_category` | Request blocked by content safety filter. Try rephrasing your prompt. | Antigravity |
+| `prompt_blocked` | Request blocked by content safety filter. Try rephrasing your prompt. | Antigravity |
+| `safety_block` | Request blocked by content safety filter. Try rephrasing your prompt. | Antigravity |
 
 ## Reasoning level
 
@@ -150,7 +150,7 @@ These are checked before the generic `invalid_request_error` pattern, because th
 |---------|------|---------|
 | `require paid credits` | AMP execute mode requires paid credits. Add credits at ampcode.com/pay. | AMP (deprecated) |
 | `amp login` | Run `amp login` to authenticate with Sourcegraph. | AMP (deprecated) |
-| `gemini result status:` | Gemini returned an unexpected result. Try a fresh session with `/new`. | Gemini (deprecated) |
+| `antigravity result status:` | Antigravity returned an unexpected result. Try a fresh session with `/new`. | Antigravity |
 
 ## Account errors
 
