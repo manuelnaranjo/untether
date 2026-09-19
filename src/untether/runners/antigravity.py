@@ -235,7 +235,11 @@ def translate_antigravity_event(
             tool_id = str(
                 su.step_index if su.step_index is not None else su.tool_name or "tool"
             )
-            tool_name = su.tool_name or (su.tool_info.name if su.tool_info else "tool")
+            tool_name = (
+                su.tool_name
+                or (su.tool_info.name if su.tool_info and su.tool_info.name else None)
+                or "tool"
+            )
             parameters = (
                 su.tool_info.parameters
                 if (su.tool_info and isinstance(su.tool_info.parameters, dict))
