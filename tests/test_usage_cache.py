@@ -309,9 +309,7 @@ class TestAntigravityCache:
         # Force TTL expiry by monkeypatching time
         from untether.utils import usage_cache
 
-        monkeypatch.setattr(
-            usage_cache.time, "monotonic", lambda: 1000000.0
-        )
+        monkeypatch.setattr(usage_cache.time, "monotonic", lambda: 1000000.0)
         second = await fetch_antigravity_usage_cached()
         assert second == first
         stats = get_cache_stats("antigravity")

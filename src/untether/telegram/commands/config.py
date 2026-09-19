@@ -797,11 +797,16 @@ async def _page_planmode(ctx: CommandContext, action: str | None = None) -> None
         buttons = [
             [
                 {
-                    "text": _check("Read-only", active=pm not in {"auto", "accept-edits", "acceptEdits"}),
+                    "text": _check(
+                        "Read-only",
+                        active=pm not in {"auto", "accept-edits", "acceptEdits"},
+                    ),
                     "callback_data": "config:pm:ro",
                 },
                 {
-                    "text": _check("Edit files", active=pm in {"accept-edits", "acceptEdits"}),
+                    "text": _check(
+                        "Edit files", active=pm in {"accept-edits", "acceptEdits"}
+                    ),
                     "callback_data": "config:pm:ae",
                 },
             ],
