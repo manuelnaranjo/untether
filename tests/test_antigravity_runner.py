@@ -1,4 +1,3 @@
-import asyncio
 from pathlib import Path
 
 import msgspec
@@ -375,6 +374,7 @@ def test_tool_name_mapping() -> None:
         meta=None,
     )
     assert len(events) == 1
+    assert isinstance(events[0], ActionEvent)
     assert events[0].action.kind == "tool"
     assert "test.py" in events[0].action.title
 
@@ -399,6 +399,7 @@ def test_tool_name_mapping() -> None:
         meta=None,
     )
     assert len(events2) == 1
+    assert isinstance(events2[0], ActionEvent)
     assert events2[0].action.kind == "file_change"
 
 
@@ -479,20 +480,26 @@ def test_default_antigravity_cmd_fallback_default(monkeypatch) -> None:
 
 
 def test_build_runner_expands_tilde_cmd(tmp_path: Path, monkeypatch) -> None:
-    from untether.runners.antigravity import build_runner
+    from untether.runners.antigravity import AntigravityRunner, build_runner
 
     fake_home = "/fake/home/user"
     monkeypatch.setenv("HOME", fake_home)
 
     cfg = {"cmd": "~/.local/bin/agy"}
     runner = build_runner(cfg, tmp_path / "untether.toml")
+    assert isinstance(runner, AntigravityRunner)
     assert runner.command() == f"{fake_home}/.local/bin/agy"
 
 
 def test_build_runner_omitted_cmd_uses_default(tmp_path: Path) -> None:
-    from untether.runners.antigravity import build_runner, default_antigravity_cmd
+    from untether.runners.antigravity import (
+        AntigravityRunner,
+        build_runner,
+        default_antigravity_cmd,
+    )
 
     runner = build_runner({}, tmp_path / "untether.toml")
+    assert isinstance(runner, AntigravityRunner)
     assert runner.command() == default_antigravity_cmd()
 
 
@@ -566,17 +573,20 @@ async def test_fetch_antigravity_usage_parsing(monkeypatch) -> None:
         '{"event":"result","result":{"status":"SUCCESS","response":"ok"}}\n',
     ]
 
-    class FakeProc:
-        returncode = 0
+    from dataclasses import dataclass
 
-        async def communicate(self):
-            return "".join(output_lines).encode("utf-8"), b""
+    import anyio
 
-    monkeypatch.setattr(
-        asyncio,
-        "create_subprocess_exec",
-        lambda *a, **kw: asyncio.sleep(0, result=FakeProc()),
-    )
+    @dataclass
+    class FakeResult:
+        returncode: int = 0
+        stdout: bytes = "".join(output_lines).encode("utf-8")
+        stderr: bytes = b""
+
+    async def fake_run_process(*a, **kw):
+        return FakeResult()
+
+    monkeypatch.setattr(anyio, "run_process", fake_run_process)
     monkeypatch.setattr("shutil.which", lambda _c: "/usr/bin/agy")
 
     res = await fetch_antigravity_usage(conversation_id="conv123")

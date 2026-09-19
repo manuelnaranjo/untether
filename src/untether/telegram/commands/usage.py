@@ -6,7 +6,6 @@ do not use Anthropic OAuth credentials.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 import os
@@ -18,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import anyio
 import httpx
 
 from ...commands import CommandBackend, CommandContext, CommandResult
@@ -321,29 +321,23 @@ async def fetch_antigravity_usage(
         args.extend(["--conversation", conversation_id])
     args.extend(["-p", "/usage"])
 
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=asyncio.subprocess.DEVNULL,
-    )
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout_seconds
-        )
+        with anyio.fail_after(timeout_seconds):
+            result = await anyio.run_process(
+                args,
+                check=False,
+            )
     except TimeoutError:
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
         raise TimeoutError("Antigravity CLI timed out while fetching usage.") from None
 
-    if proc.returncode != 0:
-        err_msg = stderr.decode("utf-8", errors="replace").strip()
+    if result.returncode != 0:
+        err_msg = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(
-            f"agy exited with code {proc.returncode}: {err_msg or 'unknown error'}"
+            f"agy exited with code {result.returncode}: {err_msg or 'unknown error'}"
         )
 
     usage_data: dict[str, Any] = {}
-    for line in stdout.decode("utf-8", errors="replace").splitlines():
+    for line in result.stdout.decode("utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -467,7 +461,7 @@ async def _resolve_antigravity_session_id(ctx: CommandContext) -> str | None:
 
             topic_store = TopicStateStore(resolve_state_path(ctx.config_path))
             token = await topic_store.get_session_resume(
-                ctx.message.channel_id, ctx.message.thread_id, "antigravity"
+                int(ctx.message.channel_id), int(ctx.message.thread_id), "antigravity"
             )
             if token and token.value:
                 return token.value
@@ -476,7 +470,7 @@ async def _resolve_antigravity_session_id(ctx: CommandContext) -> str | None:
 
         chat_store = ChatSessionStore(resolve_sessions_path(ctx.config_path))
         token = await chat_store.get_session_resume(
-            ctx.message.channel_id, owner_id=None, engine="antigravity"
+            int(ctx.message.channel_id), owner_id=None, engine="antigravity"
         )
         if token and token.value:
             return token.value
@@ -488,9 +482,9 @@ async def _resolve_antigravity_session_id(ctx: CommandContext) -> str | None:
 def _resolve_antigravity_cmd(ctx: CommandContext) -> str:
     if ctx.config_path is not None:
         with contextlib.suppress(Exception):
-            from ...config import load_config
+            from ...config import read_config
 
-            cfg = load_config(ctx.config_path)
+            cfg = read_config(ctx.config_path)
             raw = cfg.get("antigravity", {}).get("cmd") or cfg.get(
                 "antigravity", {}
             ).get("antigravity_cmd")
