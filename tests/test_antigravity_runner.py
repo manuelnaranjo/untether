@@ -458,7 +458,11 @@ def test_default_antigravity_cmd_fallback_which(monkeypatch) -> None:
     fake_home = Path("/fake/home/user")
     monkeypatch.setattr(Path, "home", lambda: fake_home)
     monkeypatch.setattr(Path, "exists", lambda _self: False)
-    monkeypatch.setattr(antigravity.shutil, "which", lambda cmd: "/usr/bin/agy" if cmd == "agy" else None)
+    monkeypatch.setattr(
+        antigravity.shutil,
+        "which",
+        lambda cmd: "/usr/bin/agy" if cmd == "agy" else None,
+    )
 
     assert antigravity.default_antigravity_cmd() == "/usr/bin/agy"
 
@@ -515,7 +519,9 @@ def test_translate_command_result_event() -> None:
     state = AntigravityStreamState()
     raw = b'{"event":"command_result","command":{"name":"usage","data":{"groups":[{"name":"Gemini"}]}}}'
     evt = antigravity_schema.decode_event(raw)
-    events = translate_antigravity_event(evt, title="antigravity", state=state, meta=None)
+    events = translate_antigravity_event(
+        evt, title="antigravity", state=state, meta=None
+    )
 
     assert len(events) == 1
     assert isinstance(events[0], StartedEvent)
@@ -567,12 +573,16 @@ async def test_fetch_antigravity_usage_parsing(monkeypatch) -> None:
             return "".join(output_lines).encode("utf-8"), b""
 
     monkeypatch.setattr(
-        asyncio, "create_subprocess_exec", lambda *a, **kw: asyncio.sleep(0, result=FakeProc())
+        asyncio,
+        "create_subprocess_exec",
+        lambda *a, **kw: asyncio.sleep(0, result=FakeProc()),
     )
     monkeypatch.setattr("shutil.which", lambda _c: "/usr/bin/agy")
 
     res = await fetch_antigravity_usage(conversation_id="conv123")
     assert res["engine"] == "antigravity"
     assert len(res["groups"]) == 1
-    assert res["five_hour"] == {"utilization": 70.0, "resets_at": "2030-01-01T00:00:00Z"}
-
+    assert res["five_hour"] == {
+        "utilization": 70.0,
+        "resets_at": "2030-01-01T00:00:00Z",
+    }
