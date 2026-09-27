@@ -19,6 +19,7 @@ type ActionKind = Literal[
     # #819: a value for the status line (``detail["context_pct"]``), not a
     # step — ProgressTracker stores it apart from the actions.
     "telemetry",
+    "thought",
 ]
 
 type UntetherEventType = Literal[

@@ -10,7 +10,7 @@ from ...transport import ChannelId
 
 logger = get_logger(__name__)
 
-Verbosity = Literal["compact", "verbose"]
+Verbosity = Literal["compact", "verbose", "super_verbose", "ultra_verbose"]
 
 # Module-level override: when set, overrides config-level verbosity.
 # Keyed by chat_id for future multi-chat support; None = use config default.
@@ -30,7 +30,31 @@ class VerboseCommand:
 
     async def handle(self, ctx: CommandContext) -> CommandResult | None:
         chat_id = ctx.message.channel_id
-        args = ctx.args_text.strip().lower()
+        args = ctx.args_text.strip().lower().replace("-", "_").replace(" ", "_")
+
+        if args in ("super", "super_verbose"):
+            _VERBOSE_OVERRIDES[chat_id] = "super_verbose"
+            logger.info("verbose.set", chat_id=chat_id, verbosity="super_verbose")
+            return CommandResult(
+                text=(
+                    "super verbose mode <b>on</b> — full AI IDE view with "
+                    "expandable tool calls and thinking blocks."
+                ),
+                notify=True,
+                parse_mode="HTML",
+            )
+
+        if args in ("ultra", "ultra_verbose"):
+            _VERBOSE_OVERRIDES[chat_id] = "ultra_verbose"
+            logger.info("verbose.set", chat_id=chat_id, verbosity="ultra_verbose")
+            return CommandResult(
+                text=(
+                    "ultra verbose mode <b>on</b> — full AI IDE view with "
+                    "all sections expanded."
+                ),
+                notify=True,
+                parse_mode="HTML",
+            )
 
         if args in ("on", "verbose"):
             _VERBOSE_OVERRIDES[chat_id] = "verbose"
@@ -61,7 +85,7 @@ class VerboseCommand:
 
         # No args: toggle
         current = _VERBOSE_OVERRIDES.get(chat_id)
-        if current == "verbose":
+        if current in ("verbose", "super_verbose", "ultra_verbose"):
             _VERBOSE_OVERRIDES[chat_id] = "compact"
             logger.info("verbose.toggled", chat_id=chat_id, verbosity="compact")
             return CommandResult(

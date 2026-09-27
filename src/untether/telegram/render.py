@@ -588,6 +588,9 @@ def _render_html(md: str) -> str:
 
 def render_markdown(md: str) -> tuple[str, list[dict[str, Any]]]:
     html = _render_html(_normalize_nested_list_markers(md or ""))
+    # Unescape supported blockquote tags so sulguk creates blockquote and
+    # expandable_blockquote entities without risking crashes on arbitrary HTML.
+    html = re.sub(r"&lt;(/?blockquote(?:\s+expandable)?)&gt;", r"<\1>", html)
     rendered = transform_html(html)
 
     text = _BULLET_RE.sub(r"\1-", rendered.text)

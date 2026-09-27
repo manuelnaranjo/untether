@@ -21,6 +21,28 @@ def test_render_markdown_basic_entities() -> None:
     ]
 
 
+def test_render_markdown_expandable_blockquote() -> None:
+    md = "<blockquote expandable>\nHello expandable block\n</blockquote>"
+    text, entities = render_markdown(md)
+    assert "Hello expandable block" in text
+    assert any(e.get("type") == "expandable_blockquote" for e in entities)
+
+
+def test_render_markdown_blockquote_always_expanded() -> None:
+    md = "<blockquote>\nHello regular block\n</blockquote>"
+    text, entities = render_markdown(md)
+    assert "Hello regular block" in text
+    assert any(e.get("type") == "blockquote" for e in entities)
+
+
+def test_render_markdown_safe_with_generic_brackets() -> None:
+    md = "<generic-type> and <blockquote expandable>inside</blockquote>"
+    text, entities = render_markdown(md)
+    assert "<generic-type>" in text
+    assert "inside" in text
+    assert any(e.get("type") == "expandable_blockquote" for e in entities)
+
+
 def test_render_markdown_code_fence_language_is_string() -> None:
     text, entities = render_markdown("```py\nprint('x')\n```")
 

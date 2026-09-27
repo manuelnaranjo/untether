@@ -715,7 +715,9 @@ class WatchdogSettings(BaseModel):
 class ProgressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    verbosity: Literal["compact", "verbose"] = "compact"
+    verbosity: Literal["compact", "verbose", "super_verbose", "ultra_verbose"] = (
+        "compact"
+    )
     max_actions: int = Field(default=5, ge=0, le=50)
     min_render_interval: float = Field(default=2.0, ge=0, le=30)
     group_chat_rps: float = Field(default=20.0 / 60.0, gt=0, le=10)
@@ -738,6 +740,21 @@ class ProgressSettings(BaseModel):
     # #819: Claude's context-window use as ``N% ctx`` at the end of the
     # progress / final / turn header line. Display-only kill switch.
     show_context_usage: bool = True
+
+    @field_validator("verbosity", mode="before")
+    @classmethod
+    def _normalize_verbosity(cls, value: object) -> object:
+        if isinstance(value, str):
+            val = value.strip().lower().replace("-", "_").replace(" ", "_")
+            if val in ("super", "super_verbose"):
+                return "super_verbose"
+            if val in ("ultra", "ultra_verbose"):
+                return "ultra_verbose"
+            if val in ("on", "verbose"):
+                return "verbose"
+            if val in ("off", "compact"):
+                return "compact"
+        return value
 
 
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")

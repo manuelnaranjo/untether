@@ -610,3 +610,111 @@ class TestLongRunningTail:
             elapsed_seconds=None,
         )
         assert "·" not in line
+
+
+class TestSuperAndUltraVerboseFinalParts:
+    """Test render_final_parts in super_verbose and ultra_verbose modes."""
+
+    def _sample_state(self) -> ProgressState:
+        action1 = Action(
+            id="1",
+            kind="command",
+            title="git status",
+            detail={
+                "tool_name": "run_command",
+                "input": {"CommandLine": "git status"},
+                "output": "On branch master\nnothing to commit",
+            },
+        )
+        action2 = Action(
+            id="2",
+            kind="thought",
+            title="Thinking",
+            detail={"thinking": "Examining repository state to verify changes."},
+        )
+        action3 = Action(
+            id="3",
+            kind="tool",
+            title="view_file",
+            detail={
+                "tool_name": "view_file",
+                "input": {"TargetFile": "/path/to/src/main.py"},
+                "output": "def main(): pass",
+            },
+        )
+        state1 = ActionState(
+            action=action1,
+            phase="completed",
+            ok=True,
+            display_phase="completed",
+            completed=True,
+            first_seen=1,
+            last_update=1,
+        )
+        state2 = ActionState(
+            action=action2,
+            phase="completed",
+            ok=True,
+            display_phase="completed",
+            completed=True,
+            first_seen=2,
+            last_update=2,
+        )
+        state3 = ActionState(
+            action=action3,
+            phase="completed",
+            ok=True,
+            display_phase="completed",
+            completed=True,
+            first_seen=3,
+            last_update=3,
+        )
+        return ProgressState(
+            engine="antigravity",
+            action_count=3,
+            actions=(state1, state2, state3),
+            resume=None,
+            resume_line=None,
+            context_line=None,
+        )
+
+    def test_super_verbose_renders_expandable_blockquotes(self):
+        formatter = MarkdownFormatter(verbosity="super_verbose")
+        state = self._sample_state()
+        parts = formatter.render_final_parts(
+            state, elapsed_s=10.0, status="done", answer="All checks passed."
+        )
+        assert parts.body is not None
+        assert "<blockquote expandable>" in parts.body
+        assert "</blockquote>" in parts.body
+        assert "git status" in parts.body
+        assert "On branch master" in parts.body
+        assert "Examining repository state" in parts.body
+        assert "main.py" in parts.body
+        assert "All checks passed." in parts.body
+
+    def test_ultra_verbose_renders_expanded_blockquotes(self):
+        formatter = MarkdownFormatter(verbosity="ultra_verbose")
+        state = self._sample_state()
+        parts = formatter.render_final_parts(
+            state, elapsed_s=10.0, status="done", answer="All checks passed."
+        )
+        assert parts.body is not None
+        # Ultra verbose must not collapse sections — always expanded!
+        assert "<blockquote expandable>" not in parts.body
+        assert "<blockquote>" in parts.body
+        assert "</blockquote>" in parts.body
+        assert "git status" in parts.body
+        assert "On branch master" in parts.body
+        assert "Examining repository state" in parts.body
+        assert "All checks passed." in parts.body
+
+    def test_compact_mode_only_shows_answer(self):
+        formatter = MarkdownFormatter(verbosity="compact")
+        state = self._sample_state()
+        parts = formatter.render_final_parts(
+            state, elapsed_s=10.0, status="done", answer="All checks passed."
+        )
+        assert parts.body == "All checks passed."
+        assert "<blockquote" not in (parts.body or "")
+
