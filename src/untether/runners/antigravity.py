@@ -557,10 +557,30 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         model = self.model
         if run_options is not None and run_options.model:
             model = run_options.model
-        if model:
-            args.extend(["--model", str(model)])
+        effort = None
         if run_options is not None and run_options.reasoning:
-            args.extend(["--effort", str(run_options.reasoning)])
+            effort = run_options.reasoning
+
+        if model:
+            match = re.match(r"^(.*?)-(low|medium|high)$", str(model))
+            base_model = match.group(1) if match else str(model)
+            effective_effort = (
+                str(effort) if effort else (match.group(2) if match else None)
+            )
+
+            if resume is None:
+                # New session: agy --model <model> --effort <effort>
+                args.extend(["--model", base_model])
+                if effective_effort:
+                    args.extend(["--effort", effective_effort])
+            else:
+                # Existing session: /model <model>-<effort>
+                if effective_effort and match is None:
+                    args.extend(["--model", f"{base_model}-{effective_effort}"])
+                else:
+                    args.extend(["--model", str(model)])
+        elif effort:
+            args.extend(["--effort", str(effort)])
         if run_options is not None and run_options.permission_mode:
             pm = run_options.permission_mode
             if pm == "plan":
