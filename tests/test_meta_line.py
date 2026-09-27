@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from untether.markdown import (
-    HARD_BREAK,
     MarkdownFormatter,
     _short_model_name,
     format_meta_line,
@@ -224,7 +223,7 @@ class TestProgressTrackerMeta:
 
 
 class TestFooterWithMetaLine:
-    """Test that _format_footer combines context + meta into a single 🏷 info line."""
+    """Test that _format_status_head combines context + meta and resume line at head."""
 
     def test_footer_combined_dir_meta_resume(self) -> None:
         tracker = ProgressTracker(engine="claude")
@@ -244,14 +243,12 @@ class TestFooterWithMetaLine:
         parts = formatter.render_final_parts(
             state, elapsed_s=10.0, status="done", answer="hello"
         )
-        assert parts.footer is not None
-        lines = parts.footer.split(HARD_BREAK)
+        assert parts.status_head is not None
         assert (
-            lines[0]
-            == "\N{LABEL} dir: untether @master | sonnet 4.5 \N{MIDDLE DOT} plan"
+            "\N{LABEL} dir: untether @master | sonnet 4.5 \N{MIDDLE DOT} plan"
+            in parts.status_head
         )
-        assert lines[1] == ""  # blank line for visual separation
-        assert lines[2] == "\u21a9\ufe0f `claude --resume sess-1`"
+        assert "```bash\nclaude --resume sess-1\n```" in parts.status_head
 
     def test_footer_meta_only(self) -> None:
         tracker = ProgressTracker(engine="claude")
@@ -267,7 +264,7 @@ class TestFooterWithMetaLine:
         parts = formatter.render_final_parts(
             state, elapsed_s=5.0, status="done", answer="ok"
         )
-        assert parts.footer == "\N{LABEL} opus"
+        assert parts.status_head == "\N{LABEL} opus"
 
     def test_footer_dir_only(self) -> None:
         """Context line without meta still gets 🏷 prefix."""
@@ -282,7 +279,7 @@ class TestFooterWithMetaLine:
         parts = formatter.render_final_parts(
             state, elapsed_s=5.0, status="done", answer="ok"
         )
-        assert parts.footer == "\N{LABEL} dir: proj"
+        assert parts.status_head == "\N{LABEL} dir: proj"
 
     def test_progress_footer_combined(self) -> None:
         """Progress messages show combined 🏷 dir + model line."""
@@ -300,11 +297,11 @@ class TestFooterWithMetaLine:
         )
         formatter = MarkdownFormatter()
         parts = formatter.render_progress_parts(state, elapsed_s=3.0)
-        assert parts.footer is not None
-        assert parts.footer == "\N{LABEL} dir: my-project | gemini-2.5-pro"
+        assert parts.status_head is not None
+        assert parts.status_head == "\N{LABEL} dir: my-project | gemini-2.5-pro"
 
     def test_footer_no_info_with_resume(self) -> None:
-        """Resume line without context or meta — no 🏷 line, just resume."""
+        """Resume line without context or meta — just highlighted resume block."""
         tracker = ProgressTracker(engine="codex")
         evt = StartedEvent(
             engine="codex",
@@ -318,9 +315,7 @@ class TestFooterWithMetaLine:
         parts = formatter.render_final_parts(
             state, elapsed_s=5.0, status="done", answer="ok"
         )
-        lines = parts.footer.split(HARD_BREAK)
-        assert lines[0] == ""  # blank line for visual separation
-        assert lines[1] == "\u21a9\ufe0f `codex resume t-1`"
+        assert parts.status_head == "```bash\ncodex resume t-1\n```"
 
     def test_footer_dir_and_resume_no_meta(self) -> None:
         """Dir + resume but no model info."""
@@ -338,16 +333,13 @@ class TestFooterWithMetaLine:
         parts = formatter.render_final_parts(
             state, elapsed_s=5.0, status="done", answer="ok"
         )
-        assert parts.footer is not None
-        lines = parts.footer.split(HARD_BREAK)
-        assert len(lines) == 3
-        assert lines[0] == "\N{LABEL} dir: proj @main"
-        assert lines[1] == ""  # blank line for visual separation
-        assert lines[2] == "\u21a9\ufe0f `codex resume t-1`"
+        assert parts.status_head is not None
+        assert "\N{LABEL} dir: proj @main" in parts.status_head
+        assert "```bash\ncodex resume t-1\n```" in parts.status_head
 
 
 class TestCrossEngineFooter:
-    """Verify the combined 🏷 footer format across all engine types."""
+    """Verify the combined 🏷 status format across all engine types."""
 
     def _render_footer(
         self,
@@ -369,7 +361,9 @@ class TestCrossEngineFooter:
             context_line=context_line,
             meta_formatter=format_meta_line,
         )
-        return MarkdownFormatter().render_progress_parts(state, elapsed_s=1.0).footer
+        return (
+            MarkdownFormatter().render_progress_parts(state, elapsed_s=1.0).status_head
+        )
 
     def test_claude_model_and_permission(self) -> None:
         footer = self._render_footer(
@@ -560,3 +554,53 @@ def test_load_progress_settings_returns_defaults_on_error(monkeypatch) -> None:
     )
     cfg = runner_bridge._load_progress_settings()
     assert isinstance(cfg, ProgressSettings)
+
+
+def test_status_head_and_highlighted_resume_rendering() -> None:
+    """Verify that dir, model, and effort line + resume code block render before AI response."""
+    from untether.runner_bridge import _strip_resume_lines
+    from untether.telegram.render import prepare_telegram
+
+    tracker = ProgressTracker(engine="antigravity")
+    evt = StartedEvent(
+        engine="antigravity",
+        resume=ResumeToken(engine="antigravity", value="conv-456"),
+        meta={"model": "gemini-2.5-pro", "effort": "high"},
+    )
+    tracker.note_event(evt)
+    state = tracker.snapshot(
+        resume_formatter=lambda t: f"`agy --conversation {t.value}`",
+        context_line="dir: untether @master",
+        meta_formatter=format_meta_line,
+    )
+    formatter = MarkdownFormatter()
+    parts = formatter.render_final_parts(
+        state, elapsed_s=5.0, status="done", answer="Here is the solution."
+    )
+    text, entities = prepare_telegram(parts)
+
+    # 1. Header is first
+    assert text.startswith("done · antigravity · 5s")
+    # 2. Status line and resume block appear before the AI answer
+    dir_idx = text.index("🏷 dir: untether @master | gemini-2.5-pro · high")
+    resume_idx = text.index("agy --conversation conv-456")
+    answer_idx = text.index("Here is the solution.")
+    assert dir_idx < resume_idx < answer_idx
+
+    # 3. Resume command is in a 'pre' entity with 'bash' language for 1-tap copying
+    pre_entities = [e for e in entities if e.get("type") == "pre"]
+    assert any(
+        e.get("language") == "bash"
+        and text.encode("utf-16-le")[2 * e["offset"] : 2 * (e["offset"] + e["length"])].decode("utf-16-le").strip()
+        == "agy --conversation conv-456"
+        for e in pre_entities
+    )
+
+    # 4. Quoting the message strips the resume code block cleanly
+    cleaned = _strip_resume_lines(
+        text, is_resume_line=lambda line: "agy --conversation" in line
+    )
+    assert "agy --conversation" not in cleaned
+    assert "```" not in cleaned
+    assert "Here is the solution." in cleaned
+

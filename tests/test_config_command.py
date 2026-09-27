@@ -3556,6 +3556,105 @@ class TestResumeLineToasts:
 
 
 # ---------------------------------------------------------------------------
+# Mention requester
+# ---------------------------------------------------------------------------
+
+
+class TestMentionRequester:
+    @pytest.mark.anyio
+    async def test_mention_requester_page_renders(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="mr",
+            text="config:mr",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "Mention requester" in msg.text
+        data = _buttons_data(msg)
+        assert "config:mr:on" in data or "config:mr:off" in data
+        assert "config:mr:clr" in data
+
+    @pytest.mark.anyio
+    async def test_mention_requester_set_on(self, tmp_path):
+        from untether.telegram.commands.config import get_mention_override
+
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="mr:on",
+            text="config:mr:on",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "settings" in msg.text.lower()
+        assert get_mention_override(123) is True
+
+    @pytest.mark.anyio
+    async def test_mention_requester_set_off(self, tmp_path):
+        from untether.telegram.commands.config import get_mention_override
+
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="mr:off",
+            text="config:mr:off",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        assert get_mention_override(123) is False
+
+    @pytest.mark.anyio
+    async def test_mention_requester_clear(self, tmp_path):
+        from untether.telegram.commands.config import (
+            _MENTION_OVERRIDES,
+            get_mention_override,
+        )
+
+        _MENTION_OVERRIDES[123] = False
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="mr:clr",
+            text="config:mr:clr",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        assert get_mention_override(123) is None
+
+    @pytest.mark.anyio
+    async def test_mention_requester_shown_on_home(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(config_path=state_path, default_engine="claude")
+        await cmd.handle(ctx)
+        msg = _last_send_msg(ctx)
+        assert "Mentions:" in msg.text
+        assert "config:mr" in _buttons_data(msg)
+
+
+class TestMentionRequesterToasts:
+    def test_toast_mr_on(self):
+        assert ConfigCommand.early_answer_toast("mr:on") == "💬 Mentions: on"
+
+    def test_toast_mr_off(self):
+        assert ConfigCommand.early_answer_toast("mr:off") == "💬 Mentions: off"
+
+    def test_toast_mr_clr(self):
+        assert ConfigCommand.early_answer_toast("mr:clr") == "💬 Mentions: cleared"
+
+    def test_toast_mr_nav(self):
+        assert ConfigCommand.early_answer_toast("mr") is None
+
+
+# ---------------------------------------------------------------------------
 # Budget settings (#129)
 # ---------------------------------------------------------------------------
 

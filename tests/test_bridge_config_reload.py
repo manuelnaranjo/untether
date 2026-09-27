@@ -73,6 +73,8 @@ class TestUpdateFrom:
             voice_transcription_language="EN",
             voice_transcription_prompt=" Trello, Untether ",
             show_resume_line=False,
+            resume_as_message=False,
+            mention_requester=False,
             forward_coalesce_s=3.5,
             media_group_debounce_s=2.5,
             voice_transcription_url_allowlist=["10.0.0.0/8"],
@@ -94,6 +96,10 @@ class TestUpdateFrom:
         assert cfg.voice_transcription_api_key.get_secret_value() == "sk-new"
         assert cfg.voice_show_transcription is False
         assert cfg.show_resume_line is False
+        assert cfg.resume_as_message is False
+        assert cfg.mention_requester is False
+        assert cfg.exec_cfg.resume_as_message is False
+        assert cfg.exec_cfg.transport.mention_requester is False
         assert cfg.forward_coalesce_s == 3.5
         assert cfg.media_group_debounce_s == 2.5
 

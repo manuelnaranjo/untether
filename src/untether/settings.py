@@ -195,6 +195,8 @@ class TelegramTransportSettings(BaseModel):
     # "queue" (wait for the turn to end) or "steer" (fold it into the running
     # turn). Per-chat / per-topic overrides via /config, /steer and /queue.
     followup_mode: Literal["queue", "steer"] = "queue"
+    resume_as_message: bool = True
+    mention_requester: bool = True
     forward_coalesce_s: float = Field(default=1.0, ge=0)
     media_group_debounce_s: float = Field(default=1.0, ge=0)
     topics: TelegramTopicsSettings = Field(default_factory=TelegramTopicsSettings)

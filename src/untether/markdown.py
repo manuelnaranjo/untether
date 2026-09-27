@@ -26,12 +26,20 @@ class MarkdownParts:
     header: str
     body: str | None = None
     footer: str | None = None
+    status_head: str | None = None
 
 
 def assemble_markdown_parts(parts: MarkdownParts) -> str:
-    return "\n\n".join(
-        chunk for chunk in (parts.header, parts.body, parts.footer) if chunk
-    )
+    chunks: list[str] = []
+    if parts.header:
+        chunks.append(parts.header)
+    if parts.status_head:
+        chunks.append(parts.status_head)
+    if parts.body:
+        chunks.append(parts.body)
+    if parts.footer:
+        chunks.append(parts.footer)
+    return "\n\n".join(chunks)
 
 
 def format_changed_file_path(
@@ -652,7 +660,10 @@ class MarkdownFormatter:
             # #777: live background tasks, below the action lines.
             body = f"{body}\n\n{state.background}" if body else state.background
         return MarkdownParts(
-            header=header, body=body, footer=self._format_footer(state)
+            header=header,
+            body=body,
+            footer=self._format_footer(state),
+            status_head=self._format_status_head(state),
         )
 
     def _format_super_verbose_body(
@@ -840,11 +851,14 @@ class MarkdownFormatter:
         else:
             body = answer if answer else None
         return MarkdownParts(
-            header=header, body=body, footer=self._format_footer(state)
+            header=header,
+            body=body,
+            footer=self._format_footer(state),
+            status_head=self._format_status_head(state),
         )
 
-    def _format_footer(self, state: ProgressState) -> str | None:
-        lines: list[str] = []
+    def _format_status_head(self, state: ProgressState) -> str | None:
+        blocks: list[str] = []
         # Combine context + meta into a single 🏷 info line with pipe separators
         info_parts: list[str] = []
         if state.context_line:
@@ -852,13 +866,27 @@ class MarkdownFormatter:
         if state.meta_line:
             info_parts.append(state.meta_line)
         if info_parts:
-            lines.append("\N{LABEL} " + " | ".join(info_parts))
+            blocks.append("\N{LABEL} " + " | ".join(info_parts))
         if state.resume_line:
-            lines.append("")  # blank line for visual separation
-            lines.append(f"\u21a9\ufe0f {state.resume_line}")
-        if not lines:
+            cmd = state.resume_line.strip()
+            if cmd.startswith("\u21a9\ufe0f"):
+                cmd = cmd[len("\u21a9\ufe0f"):].strip()
+            elif cmd.startswith("\u21a9"):
+                cmd = cmd[1:].strip()
+            if cmd.startswith("```"):
+                cmd = cmd.strip("`")
+                if "\n" in cmd:
+                    cmd = cmd.split("\n", 1)[1]
+            elif cmd.startswith("`") and cmd.endswith("`") and len(cmd) >= 2:
+                cmd = cmd[1:-1].strip()
+            if cmd:
+                blocks.append(_safe_code_fence(cmd, "bash"))
+        if not blocks:
             return None
-        return HARD_BREAK.join(lines)
+        return "\n\n".join(blocks)
+
+    def _format_footer(self, state: ProgressState) -> str | None:
+        return None
 
     def _format_actions(
         self, state: ProgressState, *, now: float | None = None

@@ -171,7 +171,7 @@ def test_progress_renderer_renders_progress_and_final() -> None:
     progress = assemble_markdown_parts(progress_parts)
     assert progress.startswith("working · codex · 3s · step 2")
     assert "✓ `bash -lc ls`" in progress
-    assert "`codex resume 0199a213-81c0-7800-8aa1-bbab2a035a53`" in progress
+    assert "```bash\ncodex resume 0199a213-81c0-7800-8aa1-bbab2a035a53\n```" in progress
 
     final_parts = formatter.render_final_parts(
         state, elapsed_s=3.0, status="done", answer="answer"
@@ -180,10 +180,9 @@ def test_progress_renderer_renders_progress_and_final() -> None:
     assert final.startswith("done · codex · 3s · step 2")
     assert "✓ `bash -lc ls`" not in final
     assert "Checking repository root for README" not in final
+    assert "```bash\ncodex resume 0199a213-81c0-7800-8aa1-bbab2a035a53\n```" in final
     assert "answer" in final
-    assert final.rstrip().endswith(
-        "`codex resume 0199a213-81c0-7800-8aa1-bbab2a035a53`"
-    )
+    assert final.index("codex resume") < final.index("answer")
 
 
 def test_progress_renderer_footer_includes_ctx_before_resume() -> None:
@@ -197,10 +196,9 @@ def test_progress_renderer_footer_includes_ctx_before_resume() -> None:
     )
     formatter = MarkdownFormatter(max_actions=5)
     parts = formatter.render_progress_parts(state, elapsed_s=0.0)
-    assert parts.footer == (
-        "\N{LABEL} dir: z80 @feat/name"
-        f"{HARD_BREAK}"
-        f"{HARD_BREAK}\u21a9\ufe0f `codex resume 0199a213-81c0-7800-8aa1-bbab2a035a53`"
+    assert parts.status_head == (
+        "\N{LABEL} dir: z80 @feat/name\n\n"
+        "```bash\ncodex resume 0199a213-81c0-7800-8aa1-bbab2a035a53\n```"
     )
 
 

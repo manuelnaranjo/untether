@@ -1568,9 +1568,21 @@ def _log_runner_event(evt: UntetherEvent) -> None:
 
 
 def _strip_resume_lines(text: str, *, is_resume_line: Callable[[str], bool]) -> str:
-    prompt = "\n".join(
-        line for line in text.splitlines() if not is_resume_line(line)
-    ).strip()
+    lines = text.splitlines()
+    filtered: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if is_resume_line(line):
+            if filtered and filtered[-1].strip().startswith("```"):
+                filtered.pop()
+            if i + 1 < len(lines) and lines[i + 1].strip() == "```":
+                i += 1
+            i += 1
+            continue
+        filtered.append(line)
+        i += 1
+    prompt = "\n".join(filtered).strip()
     return prompt or "continue"
 
 
@@ -1874,6 +1886,7 @@ class ExecBridgeConfig:
     min_render_interval: float = 0.0
     send_file: Callable[..., Awaitable[Any]] | None = None
     outbox_config: Any | None = None
+    resume_as_message: bool = False
 
 
 @dataclass(slots=True)
@@ -1905,6 +1918,13 @@ async def _send_or_edit_message(
     replace_ref: MessageRef | None = None,
     thread_id: ThreadId | None = None,
 ) -> tuple[MessageRef | None, bool]:
+    should_mention = True
+    if hasattr(transport, "_should_mention"):
+        should_mention = transport._should_mention(channel_id)
+    elif not getattr(transport, "mention_requester", True):
+        should_mention = False
+    if not should_mention:
+        reply_to = None
     msg = message
     followups = message.extra.get("followups")
     if followups:
@@ -6133,8 +6153,18 @@ async def handle_message(
                 else turn.header
             )
 
+        # Determine whether to send resume as its own message
+        raw_resume = ""
+        final_token = final_resume or t_tracker.resume
+        if final_token is not None:
+            raw_resume = runner.format_resume(final_token)
+        clean_resume = (
+            raw_resume.strip().removeprefix("\u21a9\ufe0f").strip().strip("`")
+        )
+        resume_as_msg = bool(clean_resume and getattr(cfg, "resume_as_message", False))
+
         state = t_tracker.snapshot(
-            resume_formatter=runner.format_resume,
+            resume_formatter=None if resume_as_msg else runner.format_resume,
             context_line=context_line,
             meta_formatter=format_meta_line,
         )
@@ -6313,15 +6343,47 @@ async def handle_message(
         if t_edits is not None:
             t_edits._finalizing = True
 
+        final_progress_ref = t_progress_ref
+        if resume_as_msg:
+            from .telegram.render import render_markdown
+
+            resume_block = f"```bash\n{clean_resume}\n```"
+            res_text, res_entities = render_markdown(resume_block)
+            resume_rendered = RenderedMessage(
+                text=res_text,
+                extra={"entities": res_entities},
+            )
+            if t_progress_ref is not None:
+                await _send_or_edit_message(
+                    cfg.transport,
+                    channel_id=incoming.channel_id,
+                    message=resume_rendered,
+                    edit_ref=t_progress_ref,
+                    reply_to=t_reply_to,
+                    notify=False,
+                    thread_id=incoming.thread_id,
+                )
+                final_progress_ref = None
+                edit_ref = None
+            else:
+                await _send_or_edit_message(
+                    cfg.transport,
+                    channel_id=incoming.channel_id,
+                    message=resume_rendered,
+                    reply_to=t_reply_to,
+                    notify=False,
+                    thread_id=incoming.thread_id,
+                )
+
         final_ref = await send_result_message(
             cfg,
             channel_id=incoming.channel_id,
             reply_to=t_reply_to,
-            progress_ref=t_progress_ref,
+            progress_ref=final_progress_ref,
             message=final_rendered,
             notify=t_notify,
             edit_ref=edit_ref,
-            replace_ref=t_progress_ref,
+            replace_ref=final_progress_ref,
             delete_tag="final",
             thread_id=incoming.thread_id,
         )

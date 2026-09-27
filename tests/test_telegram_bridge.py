@@ -473,6 +473,58 @@ async def test_telegram_transport_edits_and_sends_followups() -> None:
 
 
 @pytest.mark.anyio
+async def test_telegram_transport_mention_requester_false() -> None:
+    bot = FakeBot()
+    transport = TelegramTransport(bot, mention_requester=False)
+    reply = MessageRef(channel_id=123, message_id=10)
+    followup = RenderedMessage(text="part 2")
+
+    await transport.send(
+        channel_id=123,
+        message=RenderedMessage(text="part 1", extra={"followups": [followup]}),
+        options=SendOptions(reply_to=reply, notify=False, thread_id=7),
+    )
+
+    assert len(bot.send_calls) == 2
+    # reply_to_message_id stripped because mention_requester is False
+    assert bot.send_calls[0]["reply_to_message_id"] is None
+    assert bot.send_calls[0]["message_thread_id"] == 7
+    assert bot.send_calls[1]["reply_to_message_id"] is None
+    assert bot.send_calls[1]["message_thread_id"] == 7
+
+
+@pytest.mark.anyio
+async def test_telegram_transport_mention_override_per_chat() -> None:
+    from untether.telegram.commands.config import (
+        _MENTION_OVERRIDES,
+    )
+
+    bot = FakeBot()
+    transport = TelegramTransport(bot, mention_requester=True)
+    reply = MessageRef(channel_id=123, message_id=10)
+
+    try:
+        _MENTION_OVERRIDES[123] = False
+        await transport.send(
+            channel_id=123,
+            message=RenderedMessage(text="no mention"),
+            options=SendOptions(reply_to=reply),
+        )
+        assert bot.send_calls[0]["reply_to_message_id"] is None
+
+        # Chat 456 does not have override, uses mention_requester=True
+        reply2 = MessageRef(channel_id=456, message_id=20)
+        await transport.send(
+            channel_id=456,
+            message=RenderedMessage(text="with mention"),
+            options=SendOptions(reply_to=reply2),
+        )
+        assert bot.send_calls[1]["reply_to_message_id"] == 20
+    finally:
+        _MENTION_OVERRIDES.clear()
+
+
+@pytest.mark.anyio
 async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
     class _OutboxBot(BotClient):
         def __init__(self) -> None:
@@ -6476,3 +6528,104 @@ async def test_effort_reasoning_aliases_and_engine_command(tmp_path: Path) -> No
     assert (
         "chat reasoning override cleared." in transport.send_calls[-1]["message"].text
     )
+
+
+@pytest.mark.anyio
+async def test_resume_as_message_sends_isolated_code_block() -> None:
+    from tests.telegram_fakes import FakeTransport
+    from untether.markdown import MarkdownFormatter
+    from untether.runner_bridge import (
+        ExecBridgeConfig,
+        IncomingMessage,
+        handle_message,
+    )
+    from untether.runners.mock import Return, ScriptRunner
+
+    transport = FakeTransport()
+    runner = ScriptRunner(
+        [Return(answer="Here is the final response.")],
+        engine="codex",
+        resume_value="sess-abc",
+    )
+    cfg = ExecBridgeConfig(
+        transport=transport,
+        presenter=TelegramPresenter(formatter=MarkdownFormatter()),
+        final_notify=True,
+        resume_as_message=True,
+    )
+
+    await handle_message(
+        cfg,
+        runner=runner,
+        incoming=IncomingMessage(channel_id=123, message_id=10, text="hello"),
+        resume_token=None,
+        context_line="dir: untether @master",
+    )
+
+    # 1. Resume command is edited into progress_ref as its own message with bash code block
+    resume_edits = [
+        c for c in transport.edit_calls if c["message"].text.strip() == "codex resume sess-abc"
+    ]
+    assert len(resume_edits) == 1
+    assert any(
+        e.get("type") == "pre" and e.get("language") == "bash"
+        for e in resume_edits[0]["message"].extra.get("entities", [])
+    )
+
+    # 2. Final answer message has status_head with dir line before answer, and NOT the resume line
+    answer_call = transport.send_calls[-1]
+    assert "Here is the final response." in answer_call["message"].text
+    assert "🏷 dir: untether @master" in answer_call["message"].text
+    assert "codex resume sess-abc" not in answer_call["message"].text
+    assert answer_call["message"].text.index("🏷 dir: untether @master") < answer_call["message"].text.index("Here is the final response.")
+
+
+@pytest.mark.anyio
+async def test_resume_as_message_edits_progress_message() -> None:
+    from tests.telegram_fakes import FakeTransport
+    from untether.markdown import MarkdownFormatter
+    from untether.runner_bridge import (
+        ExecBridgeConfig,
+        IncomingMessage,
+        handle_message,
+    )
+    from untether.runners.mock import Return, ScriptRunner
+
+    transport = FakeTransport()
+    # Simulate an existing progress message
+    progress_ref = MessageRef(channel_id=123, message_id=99)
+    runner = ScriptRunner(
+        [Return(answer="Task finished successfully.")],
+        engine="antigravity",
+        resume_value="conv-xyz",
+    )
+    cfg = ExecBridgeConfig(
+        transport=transport,
+        presenter=TelegramPresenter(formatter=MarkdownFormatter()),
+        final_notify=False,
+        resume_as_message=True,
+    )
+
+    await handle_message(
+        cfg,
+        runner=runner,
+        incoming=IncomingMessage(channel_id=123, message_id=10, text="do something"),
+        resume_token=None,
+        progress_ref=progress_ref,
+    )
+
+    # progress_ref is edited to become the resume message
+    resume_edits = [
+        c for c in transport.edit_calls if c["message"].text.strip() == "antigravity resume conv-xyz"
+    ]
+    assert len(resume_edits) == 1
+    assert any(
+        e.get("type") == "pre" and e.get("language") == "bash"
+        for e in resume_edits[0]["message"].extra.get("entities", [])
+    )
+
+    # Final answer is sent as a new message
+    answer_sends = [
+        c for c in transport.send_calls if "Task finished successfully." in c["message"].text
+    ]
+    assert len(answer_sends) == 1

@@ -36,13 +36,19 @@ def _make_router(runner: Any) -> AutoRouter:
 
 
 class FakeTransport:
-    def __init__(self, progress_ready: anyio.Event | None = None) -> None:
+    def __init__(
+        self,
+        progress_ready: anyio.Event | None = None,
+        *,
+        mention_requester: bool = True,
+    ) -> None:
         self._next_id = 1
         self.send_calls: list[dict] = []
         self.edit_calls: list[dict] = []
         self.delete_calls: list[MessageRef] = []
         self.progress_ready = progress_ready
         self.progress_ref: MessageRef | None = None
+        self.mention_requester = mention_requester
 
     async def send(
         self,

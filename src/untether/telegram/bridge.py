@@ -183,6 +183,8 @@ class TelegramBridgeConfig:
     show_resume_line: bool = True
     # #775: global default follow-up mode (hot-reloads).
     followup_mode: Literal["queue", "steer"] = "queue"
+    resume_as_message: bool = True
+    mention_requester: bool = True
     voice_transcription: bool = False
     voice_max_bytes: int = 10 * 1024 * 1024
     voice_transcription_model: str = "gpt-4o-mini-transcribe"
@@ -222,6 +224,14 @@ class TelegramBridgeConfig:
         """
         self.show_resume_line = bool(settings.show_resume_line)
         self.followup_mode = settings.followup_mode
+        self.resume_as_message = bool(settings.resume_as_message)
+        self.mention_requester = bool(settings.mention_requester)
+        if hasattr(self.exec_cfg, "resume_as_message"):
+            object.__setattr__(
+                self.exec_cfg, "resume_as_message", bool(settings.resume_as_message)
+            )
+        if hasattr(self.exec_cfg.transport, "mention_requester"):
+            self.exec_cfg.transport.mention_requester = bool(settings.mention_requester)
         self.voice_transcription = bool(settings.voice_transcription)
         self.voice_max_bytes = int(settings.voice_max_bytes)
         self.voice_transcription_model = settings.voice_transcription_model
@@ -241,8 +251,21 @@ class TelegramBridgeConfig:
 
 
 class TelegramTransport:
-    def __init__(self, bot: BotClient) -> None:
+    def __init__(self, bot: BotClient, *, mention_requester: bool = True) -> None:
         self._bot = bot
+        self.mention_requester = mention_requester
+
+    def _should_mention(self, chat_id: int | str | None = None) -> bool:
+        if chat_id is not None:
+            try:
+                from .commands.config import get_mention_override
+
+                override = get_mention_override(cast(Any, chat_id))
+                if override is not None:
+                    return override
+            except ImportError:
+                pass
+        return getattr(self, "mention_requester", True)
 
     @staticmethod
     def _extract_followups(message: RenderedMessage) -> list[RenderedMessage]:
@@ -260,6 +283,8 @@ class TelegramTransport:
         message_thread_id: int | None,
         notify: bool,
     ) -> None:
+        if not self._should_mention(chat_id):
+            reply_to_message_id = None
         for followup in followups:
             try:
                 await self._bot.send_message(
@@ -326,6 +351,8 @@ class TelegramTransport:
                 message.extra.get("followup_thread_id"),
             )
             notify = bool(message.extra.get("followup_notify", True))
+        if not self._should_mention(chat_id):
+            reply_to_message_id = None
         followups = self._extract_followups(message)
         sent = await self._bot.send_message(
             chat_id=chat_id,
