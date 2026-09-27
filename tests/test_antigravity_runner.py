@@ -362,7 +362,9 @@ def test_build_args_with_model() -> None:
     state = AntigravityStreamState()
     args = runner.build_args("hello", None, state=state)
     assert "--model" in args
-    assert "gemini-3.8-flash-high" in args
+    assert "gemini-3.8-flash" in args
+    assert "--effort" in args
+    assert "high" in args
 
 
 def test_stdin_payload_returns_none() -> None:
@@ -639,3 +641,45 @@ async def test_fetch_antigravity_usage_parsing(monkeypatch) -> None:
         "utilization": 70.0,
         "resets_at": "2030-01-01T00:00:00Z",
     }
+
+
+def test_antigravity_build_args_model_and_effort() -> None:
+    from untether.runners.run_options import EngineRunOptions, apply_run_options
+
+    runner = AntigravityRunner()
+
+    # 1. New session with model and effort -> --model <base> --effort <effort>
+    with apply_run_options(
+        EngineRunOptions(model="gemini-3.8-flash", reasoning="high")
+    ):
+        args_new = runner.build_args(
+            "hi", resume=None, state=runner.new_state("hi", None)
+        )
+        assert "--model" in args_new
+        model_idx = args_new.index("--model")
+        assert args_new[model_idx + 1] == "gemini-3.8-flash"
+        assert "--effort" in args_new
+        effort_idx = args_new.index("--effort")
+        assert args_new[effort_idx + 1] == "high"
+
+        # 2. Existing session with model and effort -> --model <base>-<effort>
+        resume_token = ResumeToken(engine=ENGINE, value="conv-123")
+        args_resume = runner.build_args(
+            "hi", resume=resume_token, state=runner.new_state("hi", resume_token)
+        )
+        assert "--conversation" in args_resume
+        assert "--model" in args_resume
+        model_idx = args_resume.index("--model")
+        assert args_resume[model_idx + 1] == "gemini-3.8-flash-high"
+        assert "--effort" not in args_resume
+
+    # 3. Model without effort levels (e.g. claude-sonnet-4-6)
+    with apply_run_options(EngineRunOptions(model="claude-sonnet-4-6", reasoning=None)):
+        resume_token = ResumeToken(engine=ENGINE, value="conv-123")
+        args_sonnet = runner.build_args(
+            "hi", resume=resume_token, state=runner.new_state("hi", resume_token)
+        )
+        assert "--model" in args_sonnet
+        model_idx = args_sonnet.index("--model")
+        assert args_sonnet[model_idx + 1] == "claude-sonnet-4-6"
+        assert "--effort" not in args_sonnet

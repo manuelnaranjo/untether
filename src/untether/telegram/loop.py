@@ -36,6 +36,8 @@ from .commands.handlers import (
     dispatch_command,
     get_reserved_commands,
     handle_agent_command,
+    handle_callback_effort,
+    handle_callback_model,
     handle_chat_ctx_command,
     handle_chat_new_command,
     handle_ctx_command,
@@ -456,7 +458,7 @@ def _dispatch_builtin_command(
         task_group.start_soon(handler)
         return True
 
-    if command_id == "reasoning":
+    if command_id in {"effort", "efforts", "reasoning"}:
         handler = partial(
             handle_reasoning_command,
             cfg,
@@ -467,6 +469,7 @@ def _dispatch_builtin_command(
             chat_prefs,
             resolved_scope=resolved_scope,
             scope_chat_ids=scope_chat_ids,
+            invoked_as=command_id,
         )
         task_group.start_soon(handler)
         return True
@@ -2744,11 +2747,42 @@ async def run_main_loop(
                     elif update.data:
                         # Route callback to command backend if registered
                         cb_command_id, cb_args_text = parse_callback_data(update.data)
-                        if cb_command_id not in state.command_ids:
-                            refresh_commands()
-                        if cb_command_id in state.command_ids:
-                            # Extract thread_id from raw callback data
+                        if cb_command_id in {"model", "effort", "reasoning"}:
                             cb_thread_id: int | None = None
+                            if update.raw and isinstance(
+                                update.raw.get("message"), dict
+                            ):
+                                cb_thread_id = update.raw["message"].get(
+                                    "message_thread_id"
+                                )
+                            cb_ambient_context = cfg.runtime.default_context_for_chat(
+                                update.chat_id
+                            )
+                            cb_fn = (
+                                handle_callback_model
+                                if cb_command_id == "model"
+                                else handle_callback_effort
+                            )
+                            tg.start_soon(
+                                partial(
+                                    cb_fn,
+                                    scope_chat_ids=state.topics_chat_ids,
+                                    thread_id=cb_thread_id,
+                                ),
+                                cfg,
+                                update,
+                                cb_args_text,
+                                cb_ambient_context,
+                                state.topic_store,
+                                state.chat_prefs,
+                            )
+                        elif cb_command_id in state.command_ids or (
+                            cb_command_id not in state.command_ids
+                            and (refresh_commands() or True)
+                            and cb_command_id in state.command_ids
+                        ):
+                            # Extract thread_id from raw callback data
+                            cb_thread_id = None
                             if update.raw and isinstance(
                                 update.raw.get("message"), dict
                             ):

@@ -239,6 +239,11 @@ def get_reasoning_label(engine: str) -> str:
     return _ENGINE_REASONING_LABEL.get(engine, "Reasoning")
 
 
+def get_reasoning_command(engine: str) -> str:
+    """Return the engine's canonical slash command name ('effort' or 'reasoning')."""
+    return "effort" if get_reasoning_label(engine).lower() == "effort" else "reasoning"
+
+
 def get_engine_default_model(engine: str) -> str | None:
     """#475: read the engine's own default model from its settings file.
 

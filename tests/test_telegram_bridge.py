@@ -42,9 +42,20 @@ from untether.telegram.bridge import (
 from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
 from untether.telegram.chat_sessions import ChatSessionStore, resolve_sessions_path
 from untether.telegram.client import BotClient
+from untether.telegram.commands.effort import (
+    _handle_callback_effort,
+    _handle_effort_command,
+)
 from untether.telegram.commands.executor import _CaptureTransport, _run_engine
 from untether.telegram.commands.file_transfer import _handle_file_get, _handle_file_put
-from untether.telegram.commands.model import _handle_model_command
+from untether.telegram.commands.model import (
+    _handle_callback_model,
+    _handle_model_command,
+    fetch_antigravity_models,
+    fetch_available_models,
+    parse_and_group_antigravity_models,
+    reset_model_cache,
+)
 from untether.telegram.commands.reasoning import _handle_reasoning_command
 from untether.telegram.commands.topics import _handle_topic_command
 from untether.telegram.engine_overrides import EngineOverrides
@@ -1424,6 +1435,456 @@ async def test_model_command_set_and_clear_chat_override(tmp_path: Path) -> None
     assert override.model is None
     assert override.reasoning == "low"
     assert "chat model override cleared." in transport.send_calls[-1]["message"].text
+
+
+@pytest.mark.anyio
+async def test_parse_and_group_antigravity_models() -> None:
+    lines = [
+        "gemini-3.8-flash-high\tGemini 3.8 Flash (High)",
+        "gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)",
+        "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)",
+        "gemini-3.1-pro-high\tGemini 3.1 Pro (High)",
+        "gemini-3.1-pro-low\tGemini 3.1 Pro (Low)",
+        "claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)",
+        "gpt-oss-120b-medium\tGPT-OSS 120B (Medium)",
+    ]
+    models = parse_and_group_antigravity_models(lines)
+    assert len(models) == 4
+    # gemini-3.8-flash has multiple efforts -> grouped
+    assert models[0].model_id == "gemini-3.8-flash"
+    assert models[0].effort_levels == ("low", "medium", "high")
+    assert models[0].supports_effort is True
+    # gemini-3.1-pro has low and high -> grouped
+    assert models[1].model_id == "gemini-3.1-pro"
+    assert models[1].effort_levels == ("low", "high")
+    # claude-sonnet-4-6 has no effort suffix -> kept as-is
+    assert models[2].model_id == "claude-sonnet-4-6"
+    assert models[2].effort_levels == ()
+    assert models[2].supports_effort is False
+    # gpt-oss-120b-medium has only 1 effort level -> kept as-is
+    assert models[3].model_id == "gpt-oss-120b-medium"
+    assert models[3].effort_levels == ()
+
+
+@pytest.mark.anyio
+async def test_fetch_antigravity_models(tmp_path: Path) -> None:
+    # No hardcoded fallback when agy is absent
+    models = await fetch_antigravity_models(
+        antigravity_cmd="/nonexistent/bin/agy_never_exists"
+    )
+    assert models == []
+
+    script = tmp_path / "fake_agy"
+    script.write_text(
+        "#!/bin/sh\n"
+        "printf 'gemini-3.8-flash-high\\tGemini 3.8 Flash (High)\\n"
+        "gemini-3.8-flash-low\\tGemini 3.8 Flash (Low)\\n"
+        "claude-sonnet-4-6\\tClaude Sonnet 4.6\\n'\n"
+    )
+    script.chmod(0o755)
+    parsed = await fetch_antigravity_models(antigravity_cmd=str(script))
+    assert len(parsed) == 2
+    assert parsed[0].model_id == "gemini-3.8-flash"
+    assert parsed[0].effort_levels == ("low", "high")
+    assert parsed[1].model_id == "claude-sonnet-4-6"
+
+    failing_script = tmp_path / "failing_agy"
+    failing_script.write_text("#!/bin/sh\nexit 1\n")
+    failing_script.chmod(0o755)
+    fallback = await fetch_antigravity_models(antigravity_cmd=str(failing_script))
+    assert fallback == []
+
+
+@pytest.mark.anyio
+async def test_fetch_available_models_caching(tmp_path: Path) -> None:
+    reset_model_cache()
+    assert await fetch_available_models("codex") == []
+
+    script = tmp_path / "fake_agy_cache"
+    script.write_text("#!/bin/sh\nprintf 'm-a\\tModel Alpha\\n'\n")
+    script.chmod(0o755)
+
+    cached_1 = await fetch_available_models("antigravity", antigravity_cmd=str(script))
+    assert len(cached_1) == 1
+    assert cached_1[0].model_id == "m-a"
+
+    script.write_text("#!/bin/sh\nprintf 'm-b\\tModel Beta\\n'\n")
+    cached_2 = await fetch_available_models("antigravity", antigravity_cmd=str(script))
+    assert cached_2[0].model_id == "m-a"
+
+    reset_model_cache()
+    fresh = await fetch_available_models("antigravity", antigravity_cmd=str(script))
+    assert fresh[0].model_id == "m-b"
+    reset_model_cache()
+
+
+@pytest.mark.anyio
+async def test_model_command_list_antigravity(tmp_path: Path) -> None:
+    reset_model_cache()
+    script = tmp_path / "agy"
+    script.write_text(
+        "#!/bin/sh\n"
+        "printf 'gemini-3.8-flash-high\\tGemini 3.8 Flash (High)\\n"
+        "gemini-3.8-flash-low\\tGemini 3.8 Flash (Low)\\n"
+        "claude-sonnet-4-6\\tClaude Sonnet 4.6\\n'\n"
+    )
+    script.chmod(0o755)
+
+    # Populate cache using fake script
+    await fetch_available_models("antigravity", antigravity_cmd=str(script))
+
+    transport = FakeTransport()
+    cfg = make_cfg(transport, engine_id="antigravity")
+    msg = TelegramIncomingMessage(
+        transport="telegram",
+        chat_id=123,
+        message_id=10,
+        text="/model list",
+        reply_to_message_id=None,
+        reply_to_text=None,
+        sender_id=456,
+        chat_type="private",
+    )
+
+    await _handle_model_command(
+        cfg,
+        msg,
+        "list",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=None,
+    )
+
+    call = transport.send_calls[-1]
+    text = call["message"].text
+    assert "available models (antigravity):" in text
+    # Shows model ID with effort info, not descriptive name
+    assert "• gemini-3.8-flash (effort: low, high)" in text
+    assert "• claude-sonnet-4-6" in text
+    assert "Gemini 3.8 Flash" not in text
+
+    reply_markup = call["message"].extra.get("reply_markup")
+    assert reply_markup is not None
+    inline_kb = reply_markup["inline_keyboard"]
+    all_callbacks = [
+        btn["callback_data"]
+        for row in inline_kb
+        for btn in row
+        if "callback_data" in btn
+    ]
+    assert "model:set:gemini-3.8-flash" in all_callbacks
+    assert "model:set:claude-sonnet-4-6" in all_callbacks
+    assert "model:clear" in all_callbacks
+    assert "model:refresh" in all_callbacks
+
+    # Buttons use model IDs as text
+    btn_texts = [btn["text"] for row in inline_kb for btn in row]
+    assert "gemini-3.8-flash" in btn_texts
+    assert "claude-sonnet-4-6" in btn_texts
+
+
+@pytest.mark.anyio
+async def test_model_command_list_explicit_engine() -> None:
+    reset_model_cache()
+    transport = FakeTransport()
+    cfg = make_cfg(transport, engine_id="antigravity")
+    msg = TelegramIncomingMessage(
+        transport="telegram",
+        chat_id=123,
+        message_id=10,
+        text="/model list codex",
+        reply_to_message_id=None,
+        reply_to_text=None,
+        sender_id=456,
+        chat_type="private",
+    )
+
+    await _handle_model_command(
+        cfg,
+        msg,
+        "list nonexistent",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=None,
+    )
+    assert "unknown engine nonexistent" in transport.send_calls[-1]["message"].text
+    assert "available engines: antigravity" in transport.send_calls[-1]["message"].text
+
+
+@pytest.mark.anyio
+async def test_model_callback_set_with_effort_popup(tmp_path: Path) -> None:
+    reset_model_cache()
+    script = tmp_path / "agy"
+    script.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "models" ]; then\n'
+        "  printf 'gemini-3.8-flash-high\\tGemini 3.8 Flash (High)\\n"
+        "gemini-3.8-flash-low\\tGemini 3.8 Flash (Low)\\n"
+        "claude-sonnet-4-6\\tClaude Sonnet 4.6\\n'\n"
+        "else\n"
+        "  echo 'Current model'\n"
+        "  echo 'gemini-3.8-flash-high  Gemini 3.8 Flash (High)'\n"
+        "fi\n"
+    )
+    script.chmod(0o755)
+    await fetch_available_models("antigravity", antigravity_cmd=str(script))
+
+    transport = FakeTransport()
+    cfg = make_cfg(transport, engine_id="antigravity")
+    chat_prefs = ChatPrefsStore(tmp_path / "telegram_chat_prefs_state.json")
+    bot = cast(FakeBot, cfg.bot)
+
+    # 1. Set model with effort support -> pop-up asking for effort
+    query_set = TelegramCallbackQuery(
+        transport="telegram",
+        chat_id=123,
+        message_id=42,
+        callback_query_id="cbq-set-flash",
+        data="model:set:gemini-3.8-flash",
+        sender_id=123,
+    )
+    await _handle_callback_model(
+        cfg,
+        query_set,
+        "set:gemini-3.8-flash",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+
+    override = await chat_prefs.get_engine_override(123, "antigravity")
+    # Step 1: Model is selected, but change is NOT applied to engine until effort is selected
+    assert override is None
+    assert (
+        bot.callback_calls[-1]["text"]
+        == "Model set to gemini-3.8-flash. Choose effort:"
+    )
+    assert len(transport.edit_calls) == 1
+    edit_call = transport.edit_calls[-1]
+    assert "Select effort for gemini-3.8-flash" in edit_call["message"].text
+    reply_markup = edit_call["message"].extra["reply_markup"]
+    btn_callbacks = [
+        btn["callback_data"] for row in reply_markup["inline_keyboard"] for btn in row
+    ]
+    assert "effort:set:low" in btn_callbacks
+    assert "effort:set:high" in btn_callbacks
+    assert "effort:clear" in btn_callbacks
+    assert "model:back" in btn_callbacks
+
+    # 2. Select effort via callback -> ONLY NOW is change applied into engine, agy called, and buttons closed
+    query_effort = TelegramCallbackQuery(
+        transport="telegram",
+        chat_id=123,
+        message_id=42,
+        callback_query_id="cbq-effort-high",
+        data="effort:set:high",
+        sender_id=123,
+    )
+    await _handle_callback_effort(
+        cfg,
+        query_effort,
+        "set:high",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    override = await chat_prefs.get_engine_override(123, "antigravity")
+    assert override is not None
+    assert override.model == "gemini-3.8-flash"
+    assert override.reasoning == "high"
+    assert bot.callback_calls[-1]["text"] == "Effort set to high"
+    assert len(transport.edit_calls) == 2
+    # Verify buttons panel is closed and response from agy is shown
+    edit_call2 = transport.edit_calls[-1]
+    assert edit_call2["message"].extra["reply_markup"]["inline_keyboard"] == []
+    assert "gemini-3.8-flash" in edit_call2["message"].text
+    assert "high" in edit_call2["message"].text
+    assert "Current model" in edit_call2["message"].text
+    assert "Gemini 3.8 Flash (High)" in edit_call2["message"].text
+
+    # 3. Set model without effort -> no effort pop-up, sets directly
+    query_sonnet = TelegramCallbackQuery(
+        transport="telegram",
+        chat_id=123,
+        message_id=42,
+        callback_query_id="cbq-set-sonnet",
+        data="model:set:claude-sonnet-4-6",
+        sender_id=123,
+    )
+    await _handle_callback_model(
+        cfg,
+        query_sonnet,
+        "set:claude-sonnet-4-6",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    assert bot.callback_calls[-1]["text"] == "Model set to claude-sonnet-4-6"
+    assert len(transport.edit_calls) == 3
+    assert "available models (antigravity):" in transport.edit_calls[-1]["message"].text
+
+
+@pytest.mark.anyio
+async def test_model_callback_back_cancels_selection(tmp_path: Path) -> None:
+    reset_model_cache()
+    script = tmp_path / "agy"
+    script.write_text(
+        "#!/bin/sh\n"
+        "printf 'gemini-3.8-flash-high\\tGemini 3.8 Flash (High)\\n"
+        "gemini-3.8-flash-low\\tGemini 3.8 Flash (Low)\\n'\n"
+    )
+    script.chmod(0o755)
+    await fetch_available_models("antigravity", antigravity_cmd=str(script))
+
+    transport = FakeTransport()
+    cfg = make_cfg(transport, engine_id="antigravity")
+    chat_prefs = ChatPrefsStore(tmp_path / "telegram_chat_prefs_state.json")
+
+    # 1. Step 1: user selects model with multiple efforts
+    query_set = TelegramCallbackQuery(
+        transport="telegram",
+        chat_id=123,
+        message_id=42,
+        callback_query_id="cbq-set-flash",
+        data="model:set:gemini-3.8-flash",
+        sender_id=123,
+    )
+    await _handle_callback_model(
+        cfg,
+        query_set,
+        "set:gemini-3.8-flash",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    # Model not applied yet
+    assert await chat_prefs.get_engine_override(123, "antigravity") is None
+
+    # 2. User presses "Back to models" instead of selecting effort
+    query_back = TelegramCallbackQuery(
+        transport="telegram",
+        chat_id=123,
+        message_id=42,
+        callback_query_id="cbq-back",
+        data="model:back",
+        sender_id=123,
+    )
+    await _handle_callback_model(
+        cfg,
+        query_back,
+        "back",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    # Model is still not applied
+    assert await chat_prefs.get_engine_override(123, "antigravity") is None
+    # Model list does not show checkmark on gemini-3.8-flash
+    model_btn_texts = [
+        btn["text"]
+        for row in transport.edit_calls[-1]["message"].extra["reply_markup"][
+            "inline_keyboard"
+        ]
+        for btn in row
+    ]
+    assert not any("✓" in t for t in model_btn_texts)
+
+
+@pytest.mark.anyio
+async def test_effort_command(tmp_path: Path) -> None:
+    reset_model_cache()
+    script = tmp_path / "agy"
+    script.write_text(
+        "#!/bin/sh\n"
+        "printf 'gemini-3.1-pro-high\\tGemini 3.1 Pro (High)\\n"
+        "gemini-3.1-pro-low\\tGemini 3.1 Pro (Low)\\n'\n"
+    )
+    script.chmod(0o755)
+    await fetch_available_models("antigravity", antigravity_cmd=str(script))
+
+    transport = FakeTransport()
+    cfg = make_cfg(transport, engine_id="antigravity")
+    chat_prefs = ChatPrefsStore(tmp_path / "telegram_chat_prefs_state.json")
+    await chat_prefs.set_engine_override(
+        123,
+        "antigravity",
+        EngineOverrides(model="gemini-3.1-pro", reasoning=None),
+    )
+
+    msg = TelegramIncomingMessage(
+        transport="telegram",
+        chat_id=123,
+        message_id=10,
+        text="/effort",
+        reply_to_message_id=None,
+        reply_to_text=None,
+        sender_id=456,
+        chat_type="private",
+    )
+
+    # 1. Show effort view
+    await _handle_effort_command(
+        cfg,
+        msg,
+        "",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    call = transport.send_calls[-1]
+    assert "Select effort for gemini-3.1-pro" in call["message"].text
+    reply_markup = call["message"].extra.get("reply_markup")
+    assert reply_markup is not None
+    btn_callbacks = [
+        btn["callback_data"] for row in reply_markup["inline_keyboard"] for btn in row
+    ]
+    # gemini-3.1-pro only has low and high
+    assert "effort:set:low" in btn_callbacks
+    assert "effort:set:high" in btn_callbacks
+    assert "effort:set:medium" not in btn_callbacks
+
+    # 2. Reject invalid effort level for this model
+    await _handle_effort_command(
+        cfg,
+        msg,
+        "set medium",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    assert (
+        "unknown effort level medium for gemini-3.1-pro"
+        in transport.send_calls[-1]["message"].text
+    )
+
+    # 3. Accept valid effort level
+    await _handle_effort_command(
+        cfg,
+        msg,
+        "set high",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    assert (
+        "chat effort override set to high" in transport.send_calls[-1]["message"].text
+    )
+    override = await chat_prefs.get_engine_override(123, "antigravity")
+    assert override is not None
+    assert override.reasoning == "high"
+
+    # 4. Clear effort
+    await _handle_effort_command(
+        cfg,
+        msg,
+        "clear",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    assert "chat effort override cleared" in transport.send_calls[-1]["message"].text
+    override = await chat_prefs.get_engine_override(123, "antigravity")
+    assert override is None or override.reasoning is None
 
 
 @pytest.mark.anyio
@@ -3991,3 +4452,123 @@ async def test_598_superseded_edit_is_noop_not_failure() -> None:
     assert not any(r.get("event") == "transport.edit.failed" for r in logs)
     rec = next(r for r in logs if r.get("event") == "transport.edit.superseded")
     assert rec["has_reply_markup"] is True
+
+
+@pytest.mark.anyio
+async def test_effort_reasoning_aliases_and_engine_command(tmp_path: Path) -> None:
+    """Verify /reasoning, /effort, and /efforts are aliases and use the proper command/term."""
+    from untether.config import ProjectsConfig
+    from untether.router import AutoRouter, RunnerEntry
+    from untether.runners.mock import Return, ScriptRunner
+    from untether.telegram.commands.handlers import (
+        handle_effort_command,
+        handle_reasoning_command,
+    )
+    from untether.transport_runtime import TransportRuntime
+
+    transport = FakeTransport()
+    runtime = TransportRuntime(
+        router=AutoRouter(
+            entries=[
+                RunnerEntry(
+                    engine="codex",
+                    runner=ScriptRunner([Return(answer="ok")], engine="codex"),
+                ),
+                RunnerEntry(
+                    engine="antigravity",
+                    runner=ScriptRunner([Return(answer="ok")], engine="antigravity"),
+                ),
+            ],
+            default_engine="codex",
+        ),
+        projects=ProjectsConfig(projects={}, default_project=None),
+    )
+    cfg = replace(make_cfg(transport), runtime=runtime)
+    chat_prefs = ChatPrefsStore(tmp_path / "telegram_chat_prefs_aliases.json")
+
+    msg = TelegramIncomingMessage(
+        transport="telegram",
+        chat_id=123,
+        message_id=10,
+        text="",
+        reply_to_message_id=None,
+        reply_to_text=None,
+        sender_id=123,
+    )
+
+    # 1. /reasoning on antigravity engine -> reports 'effort'
+    await handle_reasoning_command(
+        cfg,
+        msg,
+        "set antigravity high",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+        invoked_as="reasoning",
+    )
+    assert (
+        "chat effort override set to high for antigravity."
+        in transport.send_calls[-1]["message"].text
+    )
+    override = await chat_prefs.get_engine_override(123, "antigravity")
+    assert override is not None
+    assert override.reasoning == "high"
+
+    # 2. /effort on codex engine -> reports 'reasoning'
+    await handle_effort_command(
+        cfg,
+        msg,
+        "set codex high",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+        invoked_as="effort",
+    )
+    assert (
+        "chat reasoning override set to high for codex."
+        in transport.send_calls[-1]["message"].text
+    )
+    override = await chat_prefs.get_engine_override(123, "codex")
+    assert override is not None
+    assert override.reasoning == "high"
+
+    # 3. /efforts alias on antigravity
+    await handle_reasoning_command(
+        cfg,
+        msg,
+        "set antigravity medium",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+        invoked_as="efforts",
+    )
+    assert (
+        "chat effort override set to medium for antigravity."
+        in transport.send_calls[-1]["message"].text
+    )
+
+    # 4. /reasoning clear antigravity -> reports 'effort'
+    await handle_reasoning_command(
+        cfg,
+        msg,
+        "clear antigravity",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+        invoked_as="reasoning",
+    )
+    assert "chat effort override cleared." in transport.send_calls[-1]["message"].text
+
+    # 5. /effort clear codex -> reports 'reasoning'
+    await handle_effort_command(
+        cfg,
+        msg,
+        "clear codex",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+        invoked_as="effort",
+    )
+    assert (
+        "chat reasoning override cleared." in transport.send_calls[-1]["message"].text
+    )

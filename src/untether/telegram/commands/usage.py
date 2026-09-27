@@ -484,6 +484,7 @@ def _resolve_antigravity_cmd(ctx: CommandContext) -> str:
         with contextlib.suppress(Exception):
             from ...config import read_config
 
+
             cfg = read_config(ctx.config_path)
             raw = cfg.get("antigravity", {}).get("cmd") or cfg.get(
                 "antigravity", {}

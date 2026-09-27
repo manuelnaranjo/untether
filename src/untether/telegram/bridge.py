@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import SecretStr
 
@@ -467,12 +467,16 @@ async def send_plain(
     text: str,
     notify: bool = True,
     thread_id: int | None = None,
+    reply_markup: dict | None = None,
 ) -> None:
     reply_to = MessageRef(channel_id=chat_id, message_id=user_msg_id)
     rendered_text, entities = prepare_telegram(MarkdownParts(header=text))
+    extra: dict[str, Any] = {"entities": entities}
+    if reply_markup is not None:
+        extra["reply_markup"] = reply_markup
     await transport.send(
         channel_id=chat_id,
-        message=RenderedMessage(text=rendered_text, extra={"entities": entities}),
+        message=RenderedMessage(text=rendered_text, extra=extra),
         options=SendOptions(reply_to=reply_to, notify=notify, thread_id=thread_id),
     )
 
