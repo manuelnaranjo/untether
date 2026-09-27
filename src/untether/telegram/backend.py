@@ -233,7 +233,10 @@ class TelegramBackend(TransportBackend):
         )
         progress_cfg = _load_progress_settings()
         bot = TelegramClient(token, group_chat_rps=progress_cfg.group_chat_rps)
-        transport = TelegramTransport(bot)
+        transport = TelegramTransport(
+            bot,
+            mention_requester=settings.mention_requester,
+        )
         formatter = MarkdownFormatter(
             max_actions=progress_cfg.max_actions,
             verbosity=progress_cfg.verbosity,
@@ -252,6 +255,8 @@ class TelegramBackend(TransportBackend):
             reply_to: int | None,
             caption: str | None,
         ) -> None:
+            if hasattr(transport, "_should_mention") and not transport._should_mention(chat_id):
+                reply_to = None
             await bot.send_document(
                 chat_id=chat_id,
                 filename=filename,
@@ -268,6 +273,7 @@ class TelegramBackend(TransportBackend):
             min_render_interval=progress_cfg.min_render_interval,
             send_file=_send_file_via_bot if _files_enabled else None,
             outbox_config=settings.files if _files_enabled else None,
+            resume_as_message=settings.resume_as_message,
         )
         cfg = TelegramBridgeConfig(
             bot=bot,
@@ -277,6 +283,8 @@ class TelegramBackend(TransportBackend):
             exec_cfg=exec_cfg,
             session_mode=settings.session_mode,
             show_resume_line=settings.show_resume_line,
+            resume_as_message=settings.resume_as_message,
+            mention_requester=settings.mention_requester,
             voice_transcription=settings.voice_transcription,
             voice_max_bytes=int(settings.voice_max_bytes),
             voice_transcription_model=settings.voice_transcription_model,

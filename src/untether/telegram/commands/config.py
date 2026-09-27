@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...commands import CommandBackend, CommandContext, CommandResult
 from ...logging import get_logger
-from ...transport import RenderedMessage
+from ...transport import ChannelId, RenderedMessage
 
 logger = get_logger(__name__)
 
@@ -360,6 +360,24 @@ async def _page_home(ctx: CommandContext) -> None:
         lines.append(f"Cost & usage: <b>{cu_label}</b>")
     lines.append(f"Verbose: <b>{vb_display}</b>{_home_hint('vb', verbose_label)}")
     lines.append(f"Resume line: <b>{rl_label}</b>")
+
+    _mention_default = True
+    try:
+        from ...settings import load_settings_if_exists as _load_mr_cfg
+
+        _mr_result = _load_mr_cfg()
+        if _mr_result is not None:
+            _mention_default = _mr_result[0].transports.telegram.mention_requester
+    except (OSError, ValueError, KeyError):
+        pass
+
+    mr_override = get_mention_override(chat_id)
+    mr_label = (
+        "on"
+        if mr_override is True
+        else ("off" if mr_override is False else ("on" if _mention_default else "off"))
+    )
+    lines.append(f"Mentions: <b>{mr_label}</b>")
     lines.append("")
 
     # --- Routing ---
@@ -446,6 +464,7 @@ async def _page_home(ctx: CommandContext) -> None:
         )
         buttons.append(
             [
+                {"text": "💬 Mentions", "callback_data": "config:mr"},
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -470,6 +489,11 @@ async def _page_home(ctx: CommandContext) -> None:
         buttons.append(
             [
                 {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
+                {"text": "💬 Mentions", "callback_data": "config:mr"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -496,6 +520,11 @@ async def _page_home(ctx: CommandContext) -> None:
         buttons.append(
             [
                 {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
+                {"text": "💬 Mentions", "callback_data": "config:mr"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -516,7 +545,12 @@ async def _page_home(ctx: CommandContext) -> None:
         if show_reasoning:
             row3.append({"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"})
         buttons.append(row3)
-        buttons.append([{"text": "ℹ️ About", "callback_data": "config:ab"}])
+        buttons.append(
+            [
+                {"text": "💬 Mentions", "callback_data": "config:mr"},
+                {"text": "ℹ️ About", "callback_data": "config:ab"},
+            ]
+        )
 
     # #294: master trigger pause toggle row — only when triggers are configured
     # for this transport. Sits below the per-engine layout so it doesn't
@@ -2008,6 +2042,82 @@ async def _page_resume_line(ctx: CommandContext, action: str | None = None) -> N
 
 
 # ---------------------------------------------------------------------------
+# Mention requester
+# ---------------------------------------------------------------------------
+
+_MENTION_OVERRIDES: dict[ChannelId, bool] = {}
+
+
+def get_mention_override(chat_id: ChannelId) -> bool | None:
+    return _MENTION_OVERRIDES.get(chat_id)
+
+
+async def _page_mention_requester(
+    ctx: CommandContext, action: str | None = None
+) -> None:
+    chat_id = ctx.message.channel_id
+
+    if action == "on":
+        _MENTION_OVERRIDES[chat_id] = True
+        logger.info("config.mention.set", chat_id=chat_id, mention=True)
+        await _page_home(ctx)
+        return
+    elif action == "off":
+        _MENTION_OVERRIDES[chat_id] = False
+        logger.info("config.mention.set", chat_id=chat_id, mention=False)
+        await _page_home(ctx)
+        return
+    elif action == "clr":
+        _MENTION_OVERRIDES.pop(chat_id, None)
+        logger.info("config.mention.cleared", chat_id=chat_id)
+        await _page_home(ctx)
+        return
+
+    _mention_default = True
+    try:
+        from ...settings import load_settings_if_exists as _load_mr_cfg
+
+        _mr_result = _load_mr_cfg()
+        if _mr_result is not None:
+            _mention_default = _mr_result[0].transports.telegram.mention_requester
+    except (OSError, ValueError, KeyError):
+        pass
+
+    override = get_mention_override(chat_id)
+    mr_label = (
+        "on"
+        if override is True
+        else ("off" if override is False else ("on" if _mention_default else "off"))
+    )
+
+    lines = [
+        "<b>💬 Mention requester</b>",
+        "",
+        f"Current: <b>{mr_label}</b>",
+        "",
+        "Controls whether responses quote and ping the user on Telegram.",
+        "• <b>on</b> — quote the requester's message when replying",
+        "• <b>off</b> — reply without quoting or pinging the requester",
+        "",
+        f'📖 <a href="{_DOCS_BASE}telegram/">Learn more</a>',
+    ]
+
+    buttons = [
+        _toggle_row(
+            "Mentions",
+            current=override,
+            default=_mention_default,
+            on_data="config:mr:on",
+            off_data="config:mr:off",
+            clr_data="config:mr:clr",
+        ),
+        [{"text": "← Back", "callback_data": "config:home"}],
+    ]
+
+    await _respond(ctx, "\n".join(lines), buttons)
+
+
+# ---------------------------------------------------------------------------
 # About
 # ---------------------------------------------------------------------------
 
@@ -2237,6 +2347,7 @@ _PAGES: dict[str, object] = {
     "dp": _page_diff_preview,
     "cu": _page_cost_usage,
     "rl": _page_resume_line,
+    "mr": _page_mention_requester,
     "ab": _page_about,
     "loop": _page_loop,
 }
@@ -2324,6 +2435,11 @@ class ConfigCommand:
                 "on": "Resume line: on",
                 "off": "Resume line: off",
                 "clr": "Resume line: cleared",
+            },
+            "mr": {
+                "on": "💬 Mentions: on",
+                "off": "💬 Mentions: off",
+                "clr": "💬 Mentions: cleared",
             },
             "loop": {
                 "on": "🔁 Loop mode: on",

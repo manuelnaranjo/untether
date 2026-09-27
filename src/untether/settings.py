@@ -173,6 +173,8 @@ class TelegramTransportSettings(BaseModel):
     voice_transcription_url_allowlist: list[str] = Field(default_factory=list)
     session_mode: Literal["stateless", "chat"] = "stateless"
     show_resume_line: bool = True
+    resume_as_message: bool = True
+    mention_requester: bool = True
     forward_coalesce_s: float = Field(default=1.0, ge=0)
     media_group_debounce_s: float = Field(default=1.0, ge=0)
     topics: TelegramTopicsSettings = Field(default_factory=TelegramTopicsSettings)

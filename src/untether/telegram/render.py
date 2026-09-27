@@ -292,6 +292,7 @@ def prepare_telegram(parts: MarkdownParts) -> tuple[str, list[dict[str, Any]]]:
         header=parts.header or "",
         body=trim_body(parts.body, max_chars=MAX_BODY_CHARS),
         footer=parts.footer,
+        status_head=parts.status_head,
     )
     return render_markdown(assemble_markdown_parts(trimmed))
 
@@ -322,6 +323,7 @@ def prepare_telegram_multi(
                         header=header,
                         body=chunk,
                         footer=parts.footer if idx == total else None,
+                        status_head=parts.status_head if idx == 1 else None,
                     )
                 )
             )
