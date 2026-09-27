@@ -262,6 +262,10 @@ async def _page_home(ctx: CommandContext) -> None:
     verbose = get_verbosity_override(chat_id)
     if verbose == "verbose":
         verbose_label = "on"
+    elif verbose == "super_verbose":
+        verbose_label = "super"
+    elif verbose == "ultra_verbose":
+        verbose_label = "ultra"
     elif verbose == "compact":
         verbose_label = "off"
     else:
@@ -969,6 +973,16 @@ async def _page_verbose(ctx: CommandContext, action: str | None = None) -> None:
         logger.info("config.verbose.set", chat_id=chat_id, verbosity="verbose")
         await _page_home(ctx)
         return
+    elif action == "super":
+        _VERBOSE_OVERRIDES[chat_id] = "super_verbose"
+        logger.info("config.verbose.set", chat_id=chat_id, verbosity="super_verbose")
+        await _page_home(ctx)
+        return
+    elif action == "ultra":
+        _VERBOSE_OVERRIDES[chat_id] = "ultra_verbose"
+        logger.info("config.verbose.set", chat_id=chat_id, verbosity="ultra_verbose")
+        await _page_home(ctx)
+        return
     elif action == "off":
         _VERBOSE_OVERRIDES[chat_id] = "compact"
         logger.info("config.verbose.set", chat_id=chat_id, verbosity="compact")
@@ -983,35 +997,53 @@ async def _page_verbose(ctx: CommandContext, action: str | None = None) -> None:
     current = get_verbosity_override(chat_id)
     if current == "verbose":
         current_label = "on"
+    elif current == "super_verbose":
+        current_label = "super"
+    elif current == "ultra_verbose":
+        current_label = "ultra"
     elif current == "compact":
         current_label = "off"
     else:
-        current_label = "off"
+        current_label = "default (off)"
 
     lines = [
         "<b>🔍 Verbose progress</b>",
         "",
         "Choose how much detail to show while the agent is working.",
         "",
-        "• <b>on</b> — show file paths, commands, and search patterns",
         "• <b>off</b> — show action names only (default)",
+        "• <b>on</b> — show file paths, commands, and search patterns",
+        "• <b>super</b> — full AI IDE view with expandable tool calls and thinking blocks",
+        "• <b>ultra</b> — full AI IDE view with all sections expanded",
         "",
         f"Current: <b>{current_label}</b>",
         "",
         f'📖 <a href="{_DOCS_BASE}verbose-progress/">Learn more</a>',
     ]
 
-    is_on = current == "verbose"
     buttons = [
-        _toggle_row(
-            "Verbose",
-            current=True if is_on else (False if current == "compact" else None),
-            default=False,
-            on_data="config:vb:on",
-            off_data="config:vb:off",
-            clr_data="config:vb:clr",
-        ),
-        [{"text": "← Back", "callback_data": "config:home"}],
+        [
+            {
+                "text": ("✓ " if current == "compact" else "") + "Off",
+                "callback_data": "config:vb:off",
+            },
+            {
+                "text": ("✓ " if current == "verbose" else "") + "On",
+                "callback_data": "config:vb:on",
+            },
+            {
+                "text": ("✓ " if current == "super_verbose" else "") + "Super",
+                "callback_data": "config:vb:super",
+            },
+            {
+                "text": ("✓ " if current == "ultra_verbose" else "") + "Ultra",
+                "callback_data": "config:vb:ultra",
+            },
+        ],
+        [
+            {"text": "Clear Override", "callback_data": "config:vb:clr"},
+            {"text": "← Back", "callback_data": "config:home"},
+        ],
     ]
 
     await _respond(ctx, "\n".join(lines), buttons)

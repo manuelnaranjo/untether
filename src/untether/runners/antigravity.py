@@ -83,6 +83,7 @@ class AntigravityStreamState:
     model: str | None = None
     saw_result: bool = False
     command_usage: dict[str, Any] | None = None
+    seen_thoughts: set[int] = field(default_factory=set)
 
 
 def _action_event(
@@ -185,6 +186,52 @@ def _build_usage(
     return usage or None
 
 
+def _read_antigravity_transcript_thoughts(session_id: str) -> list[tuple[int, str]]:
+    """Read thoughts from Antigravity CLI transcript file if available."""
+    try:
+        import json
+
+        app_dir = os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get(
+            "AGY_APP_DATA_DIR"
+        )
+        base = (
+            Path(app_dir)
+            if app_dir
+            else Path.home() / ".gemini" / "antigravity-cli"
+        )
+        path = (
+            base
+            / "brain"
+            / session_id
+            / ".system_generated"
+            / "logs"
+            / "transcript.jsonl"
+        )
+        if not path.is_file():
+            return []
+
+        thoughts: list[tuple[int, str]] = []
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                    idx = obj.get("step_index")
+                    thinking = obj.get("thinking")
+                    if (
+                        idx is not None
+                        and isinstance(thinking, str)
+                        and thinking.strip()
+                    ):
+                        thoughts.append((int(idx), thinking.strip()))
+                except Exception:  # noqa: BLE001
+                    continue
+        return thoughts
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def translate_antigravity_event(
     event: antigravity_schema.AntigravityEvent,
     *,
@@ -276,10 +323,18 @@ def translate_antigravity_event(
                     )
                 )
                 final_detail = dict(action_to_use.detail)
+                if parameters and "input" not in final_detail:
+                    final_detail["input"] = parameters
                 if output is not None:
-                    final_detail["output_preview"] = (
-                        str(output)[:500] if len(str(output)) > 500 else str(output)
+                    out_str = str(output)
+                    final_detail["output"] = (
+                        out_str[:50000] if len(out_str) > 50000 else out_str
                     )
+                    final_detail["output_preview"] = (
+                        out_str[:500] if len(out_str) > 500 else out_str
+                    )
+                if su.duration_seconds is not None:
+                    final_detail["duration_seconds"] = su.duration_seconds
                 completed_action = Action(
                     id=action_to_use.id,
                     kind=action_to_use.kind,
@@ -298,6 +353,29 @@ def translate_antigravity_event(
                     state.last_text = delta
                 else:
                     state.last_text += delta
+            if (
+                state.session_id
+                and su.step_index is not None
+                and su.step_index not in state.seen_thoughts
+            ):
+                for idx, thought in _read_antigravity_transcript_thoughts(
+                    state.session_id
+                ):
+                    if idx == su.step_index and idx not in state.seen_thoughts:
+                        state.seen_thoughts.add(idx)
+                        thought_action = Action(
+                            id=f"thought-{idx}",
+                            kind="thought",
+                            title="Thinking",
+                            detail={"thinking": thought},
+                        )
+                        out.append(
+                            _action_event(
+                                phase="completed",
+                                action=thought_action,
+                                ok=True,
+                            )
+                        )
             return out
 
         return out
@@ -313,6 +391,25 @@ def translate_antigravity_event(
         resume = None
         if state.session_id:
             resume = ResumeToken(engine=ENGINE, value=state.session_id)
+            # Catch any thoughts from transcript that weren't captured during streaming
+            for idx, thought in _read_antigravity_transcript_thoughts(
+                state.session_id
+            ):
+                if idx not in state.seen_thoughts:
+                    state.seen_thoughts.add(idx)
+                    thought_action = Action(
+                        id=f"thought-{idx}",
+                        kind="thought",
+                        title="Thinking",
+                        detail={"thinking": thought},
+                    )
+                    out.append(
+                        _action_event(
+                            phase="completed",
+                            action=thought_action,
+                            ok=True,
+                        )
+                    )
         usage = _build_usage(res.usage, res.duration_seconds)
         answer = res.response if res.response is not None else (state.last_text or "")
         logger.info(

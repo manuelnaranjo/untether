@@ -79,6 +79,11 @@ def test_translate_success_fixture() -> None:
         if evt.phase == "completed"
     }
     assert completed_actions[("1", "completed")].ok is True
+    assert completed_actions[("1", "completed")].action.detail["output"] == "hello"
+    assert completed_actions[("1", "completed")].action.detail["output_preview"] == "hello"
+    assert completed_actions[("1", "completed")].action.detail["input"] == {
+        "CommandLine": "echo hello"
+    }
 
     completed = next(evt for evt in events if isinstance(evt, CompletedEvent))
     assert completed.ok is True
@@ -88,6 +93,44 @@ def test_translate_success_fixture() -> None:
     assert completed.usage["usage"]["output_tokens"] == 50
     assert completed.usage["usage"]["thinking_tokens"] == 20
     assert completed.usage["duration_ms"] == 1200
+
+
+def test_translate_extracts_thoughts_from_transcript(tmp_path: Path, monkeypatch) -> None:
+    session_id = "test-session-123"
+    log_dir = tmp_path / "brain" / session_id / ".system_generated" / "logs"
+    log_dir.mkdir(parents=True)
+    transcript_file = log_dir / "transcript.jsonl"
+    transcript_file.write_text(
+        '{"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE", "thinking": "Analyzing code."}\n'
+    )
+    monkeypatch.setenv("ANTIGRAVITY_APP_DATA_DIR", str(tmp_path))
+
+    state = AntigravityStreamState(session_id=session_id)
+    event = _decode_event({
+        "event": "step_update",
+        "step_update": {
+            "conversation_id": session_id,
+            "step_index": 1,
+            "state": "DONE",
+            "step_type": "agent_response",
+            "text_delta": "Done.",
+        }
+    })
+    events = translate_antigravity_event(event, title="antigravity", state=state, meta=None)
+    thought_events = [e for e in events if isinstance(e, ActionEvent) and e.action.kind == "thought"]
+    assert len(thought_events) == 1
+    assert thought_events[0].action.detail["thinking"] == "Analyzing code."
+
+
+def test_progress_settings_verbosity_normalization() -> None:
+    from untether.settings import ProgressSettings
+
+    assert ProgressSettings(verbosity="super").verbosity == "super_verbose"
+    assert ProgressSettings(verbosity="super_verbose").verbosity == "super_verbose"
+    assert ProgressSettings(verbosity="ultra").verbosity == "ultra_verbose"
+    assert ProgressSettings(verbosity="ultra_verbose").verbosity == "ultra_verbose"
+    assert ProgressSettings(verbosity="on").verbosity == "verbose"
+    assert ProgressSettings(verbosity="off").verbosity == "compact"
 
 
 def test_translate_error_fixture() -> None:

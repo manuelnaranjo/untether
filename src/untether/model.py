@@ -17,6 +17,7 @@ type ActionKind = Literal[
     "turn",
     "warning",
     "telemetry",
+    "thought",
 ]
 
 type UntetherEventType = Literal[

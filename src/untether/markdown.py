@@ -435,13 +435,23 @@ def format_meta_line(meta: dict[str, Any]) -> str | None:
     return HEADER_SEP.join(parts) if parts else None
 
 
+def _safe_code_fence(text: str, lang: str = "") -> str:
+    """Format text in a safe markdown code fence, avoiding fence collisions."""
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return f"{fence}{lang}\n{text}\n{fence}"
+
+
 class MarkdownFormatter:
     def __init__(
         self,
         *,
         max_actions: int = 5,
         command_width: int | None = MAX_PROGRESS_CMD_LEN,
-        verbosity: Literal["compact", "verbose"] = "compact",
+        verbosity: Literal["compact", "verbose", "super_verbose", "ultra_verbose"] = (
+            "compact"
+        ),
     ) -> None:
         self.max_actions = max(0, int(max_actions))
         self.command_width = command_width
@@ -461,7 +471,7 @@ class MarkdownFormatter:
         if isinstance(max_actions, int):
             self.max_actions = max(0, max_actions)
         verbosity = getattr(progress, "verbosity", None)
-        if verbosity in ("compact", "verbose"):
+        if verbosity in ("compact", "verbose", "super_verbose", "ultra_verbose"):
             self.verbosity = verbosity
 
     def render_progress_parts(
@@ -484,6 +494,165 @@ class MarkdownFormatter:
             header=header, body=body, footer=self._format_footer(state)
         )
 
+    def _format_super_verbose_body(
+        self,
+        state: ProgressState,
+        *,
+        answer: str,
+        expandable: bool = True,
+    ) -> str | None:
+        """Format actions and final answer for super/ultra verbose mode.
+
+        In super verbose mode (expandable=True), tool inputs, outputs, and
+        thinking blocks are wrapped in Telegram expandable blockquotes.
+        In ultra verbose mode (expandable=False), the sections are permanently
+        expanded (standard blockquotes).
+        """
+        open_tag = "<blockquote expandable>" if expandable else "<blockquote>"
+        close_tag = "</blockquote>"
+        blocks: list[str] = []
+
+        for action_state in state.actions:
+            action = action_state.action
+            detail = action.detail or {}
+            kind = action.kind
+
+            # 1. Thought / Thinking block
+            if kind == "thought" or "thinking" in detail:
+                thinking_text = str(detail.get("thinking") or action.title or "").strip()
+                if thinking_text:
+                    blocks.append(
+                        f"{open_tag}\n"
+                        f"💭 **Thinking**\n\n"
+                        f"{thinking_text}\n"
+                        f"{close_tag}"
+                    )
+                continue
+
+            # Status icon: ✓ for done/ok, ✗ for fail, ▸ for incomplete
+            ok = action_state.ok
+            completed = action_state.completed
+            status_icon = (
+                STATUS["done"]
+                if (ok is True or (ok is None and completed))
+                else (STATUS["fail"] if ok is False else STATUS["running"])
+            )
+
+            # Tool header: Status + Kind/Title
+            tool_name = (
+                detail.get("tool_name")
+                or detail.get("name")
+                or action.title
+                or "tool"
+            )
+            title = action.title or tool_name
+            header_line = f"{status_icon} **{title}**"
+
+            # Prepare detail contents (input & output)
+            content_sections: list[str] = []
+
+            # Input / command
+            inp = detail.get("input") or detail.get("arguments") or detail.get("args")
+            cmd = detail.get("command")
+            if isinstance(inp, dict):
+                cmd = cmd or inp.get("CommandLine") or inp.get("command")
+            if cmd:
+                content_sections.append(
+                    f"**Command:**\n{_safe_code_fence(str(cmd).strip(), 'bash')}"
+                )
+            elif isinstance(inp, dict) and inp:
+                if "TargetFile" in inp or "file_path" in inp:
+                    fp = inp.get("TargetFile") or inp.get("file_path") or inp.get("path")
+                    content_sections.append(f"**File:** `{relativize_path(str(fp))}`")
+                    other_keys = {
+                        k: v
+                        for k, v in inp.items()
+                        if k not in ("TargetFile", "file_path", "path")
+                    }
+                    if other_keys:
+                        import json
+
+                        try:
+                            clean_json = json.dumps(
+                                other_keys, indent=2, ensure_ascii=False
+                            )
+                            content_sections.append(
+                                f"**Parameters:**\n{_safe_code_fence(clean_json, 'json')}"
+                            )
+                        except Exception:  # noqa: BLE001
+                            content_sections.append(
+                                f"**Parameters:**\n{_safe_code_fence(str(other_keys))}"
+                            )
+                elif (
+                    "pattern" in inp
+                    or "Pattern" in inp
+                    or "query" in inp
+                    or "Query" in inp
+                ):
+                    pat = (
+                        inp.get("pattern")
+                        or inp.get("Pattern")
+                        or inp.get("query")
+                        or inp.get("Query")
+                    )
+                    content_sections.append(f"**Query:** `{pat}`")
+                else:
+                    import json
+
+                    try:
+                        clean_json = json.dumps(inp, indent=2, ensure_ascii=False)
+                        content_sections.append(
+                            f"**Input:**\n{_safe_code_fence(clean_json, 'json')}"
+                        )
+                    except Exception:  # noqa: BLE001
+                        content_sections.append(
+                            f"**Input:**\n{_safe_code_fence(str(inp))}"
+                        )
+            elif inp and not isinstance(inp, dict):
+                content_sections.append(f"**Input:**\n{_safe_code_fence(str(inp))}")
+
+            # Output
+            output = (
+                detail.get("output")
+                or detail.get("output_preview")
+                or detail.get("result_preview")
+            )
+            if output:
+                out_str = str(output).strip()
+                if len(out_str) > 3000:
+                    truncated_count = len(out_str) - 3000
+                    out_str = (
+                        out_str[:3000]
+                        + f"\n\n… [truncated {truncated_count} chars]"
+                    )
+                content_sections.append(
+                    f"**Output:**\n{_safe_code_fence(out_str)}"
+                )
+
+            exit_code = detail.get("exit_code")
+            if isinstance(exit_code, int) and exit_code != 0:
+                content_sections.append(f"**Exit code:** {exit_code}")
+
+            if content_sections:
+                inner = "\n\n".join(content_sections)
+                blocks.append(
+                    f"{header_line}\n"
+                    f"{open_tag}\n"
+                    f"{inner}\n"
+                    f"{close_tag}"
+                )
+            else:
+                blocks.append(header_line)
+
+        # Append final answer
+        if answer:
+            if blocks:
+                blocks.append(f"---\n\n{answer}")
+            else:
+                blocks.append(answer)
+
+        return "\n\n".join(blocks) if blocks else None
+
     def render_final_parts(
         self,
         state: ProgressState,
@@ -500,7 +669,14 @@ class MarkdownFormatter:
             engine=state.engine,
         )
         answer = (answer or "").strip()
-        body = answer if answer else None
+        if self.verbosity in ("super_verbose", "ultra_verbose"):
+            body = self._format_super_verbose_body(
+                state,
+                answer=answer,
+                expandable=(self.verbosity == "super_verbose"),
+            )
+        else:
+            body = answer if answer else None
         return MarkdownParts(
             header=header, body=body, footer=self._format_footer(state)
         )
@@ -544,7 +720,7 @@ class MarkdownFormatter:
                 elapsed_seconds=elapsed_seconds,
             )
             lines.append(line)
-            if self.verbosity == "verbose":
+            if self.verbosity in ("verbose", "super_verbose", "ultra_verbose"):
                 detail_line = format_verbose_detail(action_state.action)
                 if detail_line:
                     lines.append(f"  {shorten(detail_line, _VERBOSE_DETAIL_WIDTH)}")

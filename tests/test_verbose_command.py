@@ -93,3 +93,51 @@ def test_get_verbosity_override_default():
 
 def test_backend_id():
     assert BACKEND.id == "verbose"
+
+
+@pytest.mark.anyio
+async def test_verbose_super():
+    cmd = VerboseCommand()
+    ctx = _make_ctx("super")
+    result = await cmd.handle(ctx)
+    assert result is not None
+    assert "super verbose" in result.text.lower()
+    assert get_verbosity_override(123) == "super_verbose"
+
+    ctx2 = _make_ctx("super_verbose")
+    result2 = await cmd.handle(ctx2)
+    assert result2 is not None
+    assert get_verbosity_override(123) == "super_verbose"
+
+
+@pytest.mark.anyio
+async def test_verbose_ultra():
+    cmd = VerboseCommand()
+    ctx = _make_ctx("ultra")
+    result = await cmd.handle(ctx)
+    assert result is not None
+    assert "ultra verbose" in result.text.lower()
+    assert get_verbosity_override(123) == "ultra_verbose"
+
+    ctx2 = _make_ctx("ultra_verbose")
+    result2 = await cmd.handle(ctx2)
+    assert result2 is not None
+    assert get_verbosity_override(123) == "ultra_verbose"
+
+
+@pytest.mark.anyio
+async def test_verbose_toggle_from_super_and_ultra():
+    cmd = VerboseCommand()
+    _VERBOSE_OVERRIDES[123] = "super_verbose"
+    ctx = _make_ctx("")
+    result = await cmd.handle(ctx)
+    assert result is not None
+    assert "off" in result.text.lower()
+    assert get_verbosity_override(123) == "compact"
+
+    _VERBOSE_OVERRIDES[123] = "ultra_verbose"
+    result2 = await cmd.handle(ctx)
+    assert result2 is not None
+    assert "off" in result2.text.lower()
+    assert get_verbosity_override(123) == "compact"
+
