@@ -16,7 +16,12 @@ from ..files import split_command_args
 from ..topic_state import TopicStateStore
 from ..topics import _topic_key
 from ..types import TelegramIncomingMessage
-from .model import _render_effort_view, get_model_effort_levels
+from .model import (
+    _render_effort_view,
+    antigravity_model_supports_effort,
+    fetch_available_models,
+    get_model_effort_levels,
+)
 from .overrides import (
     ENGINE_SOURCE_LABELS,
     OVERRIDE_SOURCE_LABELS,
@@ -220,6 +225,19 @@ async def _handle_reasoning_command(
             field="model",
         )
         active_model = model_res.value
+        if engine == "antigravity" and active_model:
+            models = await fetch_available_models(engine)
+            if not antigravity_model_supports_effort(
+                active_model, discovered_models=models
+            ):
+                await reply(
+                    text=(
+                        f"engine: {engine}\n\n"
+                        f"model: **{active_model}**\n\n"
+                        f"model `{active_model}` does not support effort levels."
+                    )
+                )
+                return
         model_effort_levels = (
             await get_model_effort_levels(engine, active_model)
             if engine == "antigravity" and active_model

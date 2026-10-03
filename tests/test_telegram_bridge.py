@@ -2474,6 +2474,44 @@ async def test_model_command_set_and_clear_chat_override(tmp_path: Path) -> None
 
 
 @pytest.mark.anyio
+async def test_model_command_antigravity_clears_reasoning_for_unsupported_model(
+    tmp_path: Path,
+) -> None:
+    transport = FakeTransport()
+    cfg = make_cfg(transport, engine_id="antigravity")
+    chat_prefs = ChatPrefsStore(tmp_path / "telegram_chat_prefs_state.json")
+    await chat_prefs.set_engine_override(
+        123,
+        "antigravity",
+        EngineOverrides(model="gemini-3.8-flash", reasoning="high"),
+    )
+    msg = TelegramIncomingMessage(
+        transport="telegram",
+        chat_id=123,
+        message_id=10,
+        text="/model set claude-sonnet-4-6",
+        reply_to_message_id=None,
+        reply_to_text=None,
+        sender_id=456,
+        chat_type="private",
+    )
+
+    await _handle_model_command(
+        cfg,
+        msg,
+        "set claude-sonnet-4-6",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+
+    override = await chat_prefs.get_engine_override(123, "antigravity")
+    assert override is not None
+    assert override.model == "claude-sonnet-4-6"
+    assert override.reasoning is None
+
+
+@pytest.mark.anyio
 async def test_parse_and_group_antigravity_models() -> None:
     lines = [
         "gemini-3.8-flash-high\tGemini 3.8 Flash (High)",
@@ -2758,6 +2796,10 @@ async def test_model_callback_set_with_effort_popup(tmp_path: Path) -> None:
     assert bot.callback_calls[-1]["text"] == "Model set to claude-sonnet-4-6"
     assert len(transport.edit_calls) == 3
     assert "available models (antigravity):" in transport.edit_calls[-1]["message"].text
+    override_sonnet = await chat_prefs.get_engine_override(123, "antigravity")
+    assert override_sonnet is not None
+    assert override_sonnet.model == "claude-sonnet-4-6"
+    assert override_sonnet.reasoning is None
 
 
 @pytest.mark.anyio
@@ -2919,8 +2961,60 @@ async def test_effort_command(tmp_path: Path) -> None:
         chat_prefs=chat_prefs,
     )
     assert "chat effort override cleared" in transport.send_calls[-1]["message"].text
+    # 5. Model without effort levels (claude-sonnet-4-6) rejects effort setting
+    await chat_prefs.set_engine_override(
+        123,
+        "antigravity",
+        EngineOverrides(model="claude-sonnet-4-6", reasoning=None),
+    )
+    await _handle_effort_command(
+        cfg,
+        msg,
+        "set high",
+        ambient_context=None,
+        topic_store=None,
+        chat_prefs=chat_prefs,
+    )
+    assert (
+        "model claude-sonnet-4-6 does not support effort levels."
+        in transport.send_calls[-1]["message"].text
+    )
     override = await chat_prefs.get_engine_override(123, "antigravity")
-    assert override is None or override.reasoning is None
+    assert override is not None
+    assert override.reasoning is None
+
+
+@pytest.mark.anyio
+async def test_execute_antigravity_model_switch_omits_effort(tmp_path: Path) -> None:
+    from untether.telegram.commands.model import execute_antigravity_model_switch
+
+    reset_model_cache()
+    script = tmp_path / "agy"
+    script.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\"\n"
+    )
+    script.chmod(0o755)
+
+    # claude-sonnet-4-6 does not support effort -> effort 'high' omitted
+    out = await execute_antigravity_model_switch(
+        "claude-sonnet-4-6",
+        effort="high",
+        antigravity_cmd=str(script),
+    )
+    assert out is not None
+    assert "--model claude-sonnet-4-6" in out
+    assert "--model claude-sonnet-4-6-high" not in out
+    assert "high" not in out
+
+    # gemini-3.8-flash DOES support effort -> combined into gemini-3.8-flash-high
+    out_flash = await execute_antigravity_model_switch(
+        "gemini-3.8-flash",
+        effort="high",
+        antigravity_cmd=str(script),
+    )
+    assert out_flash is not None
+    assert "--model gemini-3.8-flash-high" in out_flash
 
 
 @pytest.mark.anyio
