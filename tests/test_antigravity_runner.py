@@ -683,3 +683,88 @@ def test_antigravity_build_args_model_and_effort() -> None:
         model_idx = args_sonnet.index("--model")
         assert args_sonnet[model_idx + 1] == "claude-sonnet-4-6"
         assert "--effort" not in args_sonnet
+
+    # 4. Model without effort levels with reasoning override -> effort is omitted
+    with apply_run_options(EngineRunOptions(model="claude-sonnet-4-6", reasoning="high")):
+        # New session: --effort high is omitted
+        args_new = runner.build_args(
+            "hi", resume=None, state=runner.new_state("hi", None)
+        )
+        assert "--model" in args_new
+        assert args_new[args_new.index("--model") + 1] == "claude-sonnet-4-6"
+        assert "--effort" not in args_new
+
+        # Resume session: suffix is omitted
+        resume_token = ResumeToken(engine=ENGINE, value="conv-123")
+        args_resume = runner.build_args(
+            "hi", resume=resume_token, state=runner.new_state("hi", resume_token)
+        )
+        assert "--model" in args_resume
+        assert args_resume[args_resume.index("--model") + 1] == "claude-sonnet-4-6"
+        assert "--effort" not in args_resume
+
+    # 5. gpt-oss-120b-medium without effort levels -> preserved, effort omitted
+    with apply_run_options(EngineRunOptions(model="gpt-oss-120b-medium", reasoning="medium")):
+        args_gpt = runner.build_args(
+            "hi", resume=None, state=runner.new_state("hi", None)
+        )
+        assert "--model" in args_gpt
+        assert args_gpt[args_gpt.index("--model") + 1] == "gpt-oss-120b-medium"
+        assert "--effort" not in args_gpt
+
+
+def test_antigravity_model_supports_effort_and_meta() -> None:
+    from untether.runners.antigravity import (
+        DiscoveredModel,
+        antigravity_model_supports_effort,
+        reset_model_cache,
+        set_cached_models,
+    )
+    from untether.runners.run_options import EngineRunOptions, apply_run_options
+
+    reset_model_cache()
+    # Without cache
+    assert antigravity_model_supports_effort(None) is True
+    assert antigravity_model_supports_effort("gemini-3.8-flash") is True
+    assert antigravity_model_supports_effort("gemini-3.8-flash-high") is True
+    assert antigravity_model_supports_effort("claude-opus-5-5") is True
+    assert antigravity_model_supports_effort("claude-sonnet-5-5") is True
+    assert antigravity_model_supports_effort("claude-sonnet-4-6") is False
+    assert antigravity_model_supports_effort("gpt-oss-120b-medium") is False
+
+    # With cache
+    mock_models = [
+        DiscoveredModel(
+            model_id="gemini-3.8-flash",
+            effort_levels=("low", "medium", "high"),
+            raw_ids=("gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"),
+        ),
+        DiscoveredModel(
+            model_id="custom-no-effort",
+            effort_levels=(),
+            raw_ids=("custom-no-effort",),
+        ),
+    ]
+    set_cached_models(mock_models)
+    assert antigravity_model_supports_effort("gemini-3.8-flash") is True
+    assert antigravity_model_supports_effort("custom-no-effort") is False
+
+    # Event meta doesn't set effort when model doesn't support it
+    runner = AntigravityRunner()
+    state = AntigravityStreamState()
+    with apply_run_options(EngineRunOptions(model="claude-sonnet-4-6", reasoning="high")):
+        decoded = _decode_event(
+            {
+                "event": "init",
+                "conversation_id": "test-id",
+                "init": {"model": "claude-sonnet-4-6"},
+            }
+        )
+        events = runner.translate(
+            decoded,
+            state=state,
+            resume=None,
+            found_session=None,
+        )
+        assert len(events) == 1
+        assert "effort" not in (events[0].meta or {})

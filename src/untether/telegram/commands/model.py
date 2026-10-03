@@ -10,6 +10,22 @@ from typing import TYPE_CHECKING, Any
 
 from ...context import RunContext
 from ...logging import get_logger
+from ...runners.antigravity import (
+    DiscoveredModel,
+    antigravity_model_supports_effort,
+    default_antigravity_cmd,
+    fetch_antigravity_models,
+    fetch_available_models,
+    get_cached_models,
+    get_last_antigravity_cmd,
+    get_model_effort_levels,
+    parse_and_group_antigravity_models,
+    set_cached_models,
+    set_last_antigravity_cmd,
+)
+from ...runners.antigravity import (
+    reset_model_cache as runner_reset_model_cache,
+)
 from ...transport import MessageRef, RenderedMessage
 from ..bridge import CLEAR_MARKUP, MarkdownParts, prepare_telegram
 from ..chat_prefs import ChatPrefsStore
@@ -37,6 +53,29 @@ MODEL_USAGE = (
     "usage: `/model`, `/model list [engine]`, `/model set <model>`, "
     "`/model set <engine> <model>`, or `/model clear [engine]`"
 )
+
+__all__ = [
+    "DiscoveredModel",
+    "ModelSelectorState",
+    "ModelSelectorStateMachine",
+    "ModelSelectorStep",
+    "antigravity_model_supports_effort",
+    "default_antigravity_cmd",
+    "execute_antigravity_model_switch",
+    "fetch_antigravity_models",
+    "fetch_available_models",
+    "get_cached_models",
+    "get_last_antigravity_cmd",
+    "get_model_effort_levels",
+    "model_selector_state_machine",
+    "parse_and_group_antigravity_models",
+    "reset_model_cache",
+    "reset_model_selector_state",
+    "resolve_antigravity_cmd",
+    "resolve_antigravity_conversation_id",
+    "set_cached_models",
+    "set_last_antigravity_cmd",
+]
 
 
 class ModelSelectorStep(str, Enum):
@@ -142,82 +181,8 @@ def reset_model_selector_state() -> None:
     model_selector_state_machine.reset()
 
 
-@dataclass(frozen=True, slots=True)
-class DiscoveredModel:
-    model_id: str
-    effort_levels: tuple[str, ...] = ()
-    raw_ids: tuple[str, ...] = ()
-
-    @property
-    def supports_effort(self) -> bool:
-        return len(self.effort_levels) > 0
-
-
-def parse_and_group_antigravity_models(
-    lines: list[str],
-) -> list[DiscoveredModel]:
-    raw_ids: list[str] = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("\t", 1)
-        m_id = parts[0].strip()
-        if m_id and m_id not in raw_ids:
-            raw_ids.append(m_id)
-
-    if not raw_ids:
-        return []
-
-    base_groups: dict[str, list[tuple[str | None, str]]] = {}
-    for r_id in raw_ids:
-        m = re.match(r"^(.*?)-(low|medium|high)$", r_id)
-        if m:
-            base = m.group(1)
-            eff = m.group(2)
-            base_groups.setdefault(base, []).append((eff, r_id))
-        else:
-            base_groups.setdefault(r_id, []).append((None, r_id))
-
-    effort_priority = ("low", "medium", "high")
-    models: list[DiscoveredModel] = []
-    for base, entries in base_groups.items():
-        efforts = [e for e, _ in entries if e is not None]
-        if len(efforts) > 1:
-            sorted_efforts = tuple(e for e in effort_priority if e in efforts)
-            models.append(
-                DiscoveredModel(
-                    model_id=base,
-                    effort_levels=sorted_efforts,
-                    raw_ids=tuple(r for _, r in entries),
-                )
-            )
-        else:
-            for _, r_id in entries:
-                models.append(
-                    DiscoveredModel(
-                        model_id=r_id,
-                        effort_levels=(),
-                        raw_ids=(r_id,),
-                    )
-                )
-
-    return models
-
-
-_MODEL_CACHE_TTL = 300.0  # 5 minutes
-_models_cache: dict[str, tuple[float, list[DiscoveredModel]]] = {}
-_last_antigravity_cmd: str | None = None
-
-
-def set_last_antigravity_cmd(cmd: str | None) -> None:
-    global _last_antigravity_cmd
-    _last_antigravity_cmd = cmd
-
-
 def reset_model_cache() -> None:
-    global _models_cache
-    _models_cache.clear()
+    runner_reset_model_cache()
     model_selector_state_machine.reset()
 
 
@@ -228,8 +193,9 @@ def resolve_antigravity_cmd(
 ) -> str:
     if antigravity_cmd:
         return antigravity_cmd
-    if _last_antigravity_cmd:
-        return _last_antigravity_cmd
+    last_cmd = get_last_antigravity_cmd()
+    if last_cmd:
+        return last_cmd
     if chat_prefs is not None and hasattr(chat_prefs, "_path"):
         with contextlib.suppress(Exception):
             config_path = chat_prefs._path.with_name("untether.toml")
@@ -244,8 +210,6 @@ def resolve_antigravity_cmd(
                     import os
 
                     return os.path.expanduser(raw)
-    from ...runners.antigravity import default_antigravity_cmd
-
     return default_antigravity_cmd()
 
 
@@ -292,6 +256,13 @@ async def execute_antigravity_model_switch(
     if not shutil.which(str(expanded)) and not expanded.exists():
         return None
 
+    if effort:
+        models = await fetch_available_models(
+            "antigravity", antigravity_cmd=antigravity_cmd
+        )
+        if not antigravity_model_supports_effort(model, discovered_models=models):
+            effort = None
+
     args = [str(expanded)]
     if conversation_id:
         args.extend(["--conversation", conversation_id])
@@ -323,74 +294,6 @@ async def execute_antigravity_model_switch(
     except Exception as exc:  # noqa: BLE001
         logger.warning("antigravity.model_switch.error", error=str(exc))
         return None
-
-
-async def fetch_antigravity_models(
-    *,
-    antigravity_cmd: str | None = None,
-    timeout_seconds: float = 5.0,
-) -> list[DiscoveredModel]:
-    """Fetch available models from Antigravity CLI by running `agy models`."""
-    if antigravity_cmd:
-        set_last_antigravity_cmd(antigravity_cmd)
-
-    cmd = antigravity_cmd or resolve_antigravity_cmd()
-    expanded = Path(cmd).expanduser()
-    if not shutil.which(str(expanded)) and not expanded.exists():
-        return []
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            str(expanded),
-            "models",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-    except Exception:  # noqa: BLE001
-        return []
-
-    if proc.returncode != 0:
-        return []
-
-    lines = stdout.decode("utf-8", errors="replace").splitlines()
-    return parse_and_group_antigravity_models(lines)
-
-
-async def fetch_available_models(
-    engine: str,
-    *,
-    antigravity_cmd: str | None = None,
-) -> list[DiscoveredModel]:
-    if engine != "antigravity":
-        return []
-    if antigravity_cmd:
-        set_last_antigravity_cmd(antigravity_cmd)
-    now = time.monotonic()
-    cached = _models_cache.get(engine)
-    if cached is not None and now - cached[0] < _MODEL_CACHE_TTL:
-        return cached[1]
-    models = await fetch_antigravity_models(antigravity_cmd=antigravity_cmd)
-    _models_cache[engine] = (now, models)
-    return models
-
-
-async def get_model_effort_levels(
-    engine: str,
-    model_id: str | None,
-    *,
-    antigravity_cmd: str | None = None,
-) -> tuple[str, ...]:
-    if engine != "antigravity" or not model_id:
-        return ()
-    models = await fetch_available_models(engine, antigravity_cmd=antigravity_cmd)
-    match = re.match(r"^(.*?)-(low|medium|high)$", model_id)
-    base_id = match.group(1) if match else model_id
-    for m in models:
-        if m.model_id == model_id or m.model_id == base_id or model_id in m.raw_ids:
-            return m.effort_levels
-    return ()
 
 
 async def _render_model_view(
@@ -625,6 +528,12 @@ async def _handle_model_command(
                     text=f"unknown engine `{engine}`.\navailable engines: `{available}`"
                 )
                 return
+        models = await fetch_available_models(engine)
+        supports_effort = (
+            antigravity_model_supports_effort(model, discovered_models=models)
+            if engine == "antigravity"
+            else True
+        )
         try:
             scope = await apply_engine_override(
                 reply=reply,
@@ -635,7 +544,11 @@ async def _handle_model_command(
                 engine=engine,
                 update=lambda current: EngineOverrides(
                     model=model,
-                    reasoning=current.reasoning if current is not None else None,
+                    reasoning=(
+                        None
+                        if engine == "antigravity" and not supports_effort
+                        else (current.reasoning if current is not None else None)
+                    ),
                     permission_mode=current.permission_mode
                     if current is not None
                     else None,
@@ -873,17 +786,27 @@ async def _handle_callback_model(
             (m for m in models if m.model_id == model or model in m.raw_ids),
             None,
         )
+        supports_effort = (
+            matched_m.supports_effort
+            if matched_m is not None
+            else antigravity_model_supports_effort(model, discovered_models=models)
+        )
         if (
             engine == "antigravity"
-            and matched_m is not None
-            and matched_m.supports_effort
+            and supports_effort
         ):
+            model_id = matched_m.model_id if matched_m is not None else model
+            effort_levels = (
+                matched_m.effort_levels
+                if matched_m is not None
+                else ("low", "medium", "high")
+            )
             model_selector_state_machine.set_selecting_effort(
                 chat_id=query.chat_id,
                 message_id=query.message_id,
                 engine=engine,
-                model_id=matched_m.model_id,
-                effort_levels=matched_m.effort_levels,
+                model_id=model_id,
+                effort_levels=effort_levels,
                 sender_id=query.sender_id,
             )
             if query.callback_query_id is not None:
@@ -895,8 +818,8 @@ async def _handle_callback_model(
                 cfg,
                 msg,
                 engine=engine,
-                model_id=matched_m.model_id,
-                effort_levels=matched_m.effort_levels,
+                model_id=model_id,
+                effort_levels=effort_levels,
                 ambient_context=ambient_context,
                 topic_store=topic_store,
                 chat_prefs=chat_prefs,
@@ -935,7 +858,11 @@ async def _handle_callback_model(
                 engine=engine,
                 update=lambda current: EngineOverrides(
                     model=model,
-                    reasoning=current.reasoning if current is not None else None,
+                    reasoning=(
+                        None
+                        if engine == "antigravity" and not supports_effort
+                        else (current.reasoning if current is not None else None)
+                    ),
                     permission_mode=current.permission_mode
                     if current is not None
                     else None,

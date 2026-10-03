@@ -273,6 +273,22 @@ async def _page_home(ctx: CommandContext) -> None:
 
     show_plan_mode = current_engine in PERMISSION_MODE_SUPPORTED_ENGINES
     show_reasoning = supports_reasoning(current_engine)
+    if (
+        show_reasoning
+        and current_engine == "antigravity"
+        and engine_override
+        and engine_override.model
+    ):
+        from ...runners.antigravity import (
+            antigravity_model_supports_effort,
+            get_cached_models,
+        )
+
+        cached_models = get_cached_models(current_engine)
+        if not antigravity_model_supports_effort(
+            engine_override.model, discovered_models=cached_models
+        ):
+            show_reasoning = False
     show_ask_questions = current_engine in ASK_QUESTIONS_SUPPORTED_ENGINES
     show_diff_preview = current_engine in DIFF_PREVIEW_SUPPORTED_ENGINES
     show_cost_usage = (
@@ -407,8 +423,8 @@ async def _page_home(ctx: CommandContext) -> None:
             triggers_indicator = f"Triggers (cron/webhook): <b>{state}</b>"
     if triggers_indicator is not None:
         lines.append(triggers_indicator)
+    home_rs_label = get_reasoning_label(current_engine)
     if show_reasoning:
-        home_rs_label = get_reasoning_label(current_engine)
         if reasoning_label == "default":
             engine_default = get_engine_default_reasoning(current_engine)
             rs_hint = f"  · {engine_default}" if engine_default else ""
@@ -456,12 +472,11 @@ async def _page_home(ctx: CommandContext) -> None:
                 {"text": "🔁 Loop mode", "callback_data": "config:loop"},
             ]
         )
-        buttons.append(
-            [
-                {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
-                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
-            ]
-        )
+        row5 = []
+        if show_reasoning:
+            row5.append({"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"})
+        row5.append({"text": "⚙️ Engine & model", "callback_data": "config:ag"})
+        buttons.append(row5)
         buttons.append(
             [
                 {"text": "💬 Mentions", "callback_data": "config:mr"},
@@ -486,12 +501,11 @@ async def _page_home(ctx: CommandContext) -> None:
                 {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
             ]
         )
-        buttons.append(
-            [
-                {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
-                {"text": "💬 Mentions", "callback_data": "config:mr"},
-            ]
-        )
+        row4 = []
+        if show_reasoning:
+            row4.append({"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"})
+        row4.append({"text": "💬 Mentions", "callback_data": "config:mr"})
+        buttons.append(row4)
         buttons.append(
             [
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
@@ -505,12 +519,11 @@ async def _page_home(ctx: CommandContext) -> None:
                 {"text": "💰 Cost & usage", "callback_data": "config:cu"},
             ]
         )
-        buttons.append(
-            [
-                {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
-                {"text": "🔍 Verbose", "callback_data": "config:vb"},
-            ]
-        )
+        row2 = []
+        if show_reasoning:
+            row2.append({"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"})
+        row2.append({"text": "🔍 Verbose", "callback_data": "config:vb"})
+        buttons.append(row2)
         buttons.append(
             [
                 {"text": "↩️ Resume line", "callback_data": "config:rl"},
@@ -1347,6 +1360,24 @@ async def _page_reasoning(ctx: CommandContext, action: str | None = None) -> Non
             [[{"text": "← Back", "callback_data": "config:home"}]],
         )
         return
+
+    current = await prefs.get_engine_override(chat_id, current_engine)
+    if current_engine == "antigravity" and current and current.model:
+        from ...runners.antigravity import (
+            antigravity_model_supports_effort,
+            fetch_available_models,
+        )
+
+        models = await fetch_available_models(current_engine)
+        if not antigravity_model_supports_effort(
+            current.model, discovered_models=models
+        ):
+            await _respond(
+                ctx,
+                f"<b>🧠 Reasoning</b>\n\nModel <code>{current.model}</code> does not support effort levels.",
+                [[{"text": "← Back", "callback_data": "config:home"}]],
+            )
+            return
 
     if action in _RS_ACTIONS:
         level = _RS_ACTIONS[action]

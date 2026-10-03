@@ -1823,6 +1823,55 @@ class TestReasoning:
         await cmd.handle(ctx)
         assert "medium" in _last_send_msg(ctx).text
 
+    @pytest.mark.anyio
+    async def test_home_hides_reasoning_for_antigravity_unsupported_model(
+        self, tmp_path
+    ):
+        """Home page hides reasoning when antigravity model doesn't support effort."""
+        from untether.runners.antigravity import reset_model_cache
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+        from untether.telegram.engine_overrides import EngineOverrides
+
+        reset_model_cache()
+        state_path = tmp_path / "prefs.json"
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        await prefs.set_engine_override(
+            123, "antigravity", EngineOverrides(model="claude-sonnet-4-6")
+        )
+
+        cmd = ConfigCommand()
+        ctx = _make_ctx(config_path=state_path, default_engine="antigravity")
+        await cmd.handle(ctx)
+        msg = _last_send_msg(ctx)
+        assert "config:rs" not in _buttons_data(msg)
+
+    @pytest.mark.anyio
+    async def test_reasoning_page_informs_antigravity_unsupported_model(
+        self, tmp_path
+    ):
+        """Reasoning page informs that model does not support effort levels."""
+        from untether.runners.antigravity import reset_model_cache
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+        from untether.telegram.engine_overrides import EngineOverrides
+
+        reset_model_cache()
+        state_path = tmp_path / "prefs.json"
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        await prefs.set_engine_override(
+            123, "antigravity", EngineOverrides(model="claude-sonnet-4-6")
+        )
+
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="rs",
+            text="config:rs",
+            config_path=state_path,
+            default_engine="antigravity",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "does not support effort levels" in msg.text
+
 
 # ---------------------------------------------------------------------------
 # Reasoning toasts
