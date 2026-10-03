@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING, Any
 
 from ...context import RunContext
 from ...logging import get_logger
+from ..bridge import CLEAR_MARKUP
 from ..chat_prefs import ChatPrefsStore
 from ..engine_overrides import (
-    EngineOverrides,
     allowed_reasoning_levels,
     get_reasoning_label,
     resolve_override_value,
+    with_override,
 )
-from ..bridge import CLEAR_MARKUP
 from ..render import MarkdownParts, prepare_telegram
 from ..topic_state import TopicStateStore
 from ..topics import _topic_key
@@ -166,40 +166,17 @@ async def _handle_callback_effort(
                 chat_prefs=chat_prefs,
                 chat_id=query.chat_id,
                 engine=engine,
-                update=lambda current: EngineOverrides(
+                update=lambda current: with_override(
+                    current,
                     model=model_to_set
                     or (current.model if current is not None else None),
                     reasoning=level,
-                    permission_mode=current.permission_mode
-                    if current is not None
-                    else None,
-                    ask_questions=current.ask_questions
-                    if current is not None
-                    else None,
-                    diff_preview=current.diff_preview if current is not None else None,
-                    show_api_cost=current.show_api_cost
-                    if current is not None
-                    else None,
-                    show_subscription_usage=current.show_subscription_usage
-                    if current is not None
-                    else None,
-                    show_resume_line=current.show_resume_line
-                    if current is not None
-                    else None,
-                    budget_enabled=current.budget_enabled
-                    if current is not None
-                    else None,
-                    budget_auto_cancel=current.budget_auto_cancel
-                    if current is not None
-                    else None,
                 ),
                 topic_unavailable="topic effort overrides are unavailable.",
                 chat_unavailable="chat effort overrides are unavailable (no config path).",
             )
             if pending is not None:
-                model_selector_state_machine.clear(
-                    query.chat_id, query.message_id
-                )
+                model_selector_state_machine.clear(query.chat_id, query.message_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("effort.callback.set_failed", error=str(exc))
             if query.callback_query_id is not None:
@@ -240,9 +217,7 @@ async def _handle_callback_effort(
             text = "\n\n".join(parts)
             from ...transport import MessageRef, RenderedMessage
 
-            rendered_text, entities = prepare_telegram(
-                MarkdownParts(header=text)
-            )
+            rendered_text, entities = prepare_telegram(MarkdownParts(header=text))
             extra: dict[str, Any] = {
                 "entities": entities,
                 "reply_markup": CLEAR_MARKUP,
@@ -290,40 +265,17 @@ async def _handle_callback_effort(
                 chat_prefs=chat_prefs,
                 chat_id=query.chat_id,
                 engine=engine,
-                update=lambda current: EngineOverrides(
+                update=lambda current: with_override(
+                    current,
                     model=model_to_set
                     or (current.model if current is not None else None),
                     reasoning=None,
-                    permission_mode=current.permission_mode
-                    if current is not None
-                    else None,
-                    ask_questions=current.ask_questions
-                    if current is not None
-                    else None,
-                    diff_preview=current.diff_preview if current is not None else None,
-                    show_api_cost=current.show_api_cost
-                    if current is not None
-                    else None,
-                    show_subscription_usage=current.show_subscription_usage
-                    if current is not None
-                    else None,
-                    show_resume_line=current.show_resume_line
-                    if current is not None
-                    else None,
-                    budget_enabled=current.budget_enabled
-                    if current is not None
-                    else None,
-                    budget_auto_cancel=current.budget_auto_cancel
-                    if current is not None
-                    else None,
                 ),
                 topic_unavailable="topic effort overrides are unavailable.",
                 chat_unavailable="chat effort overrides are unavailable (no config path).",
             )
             if pending is not None:
-                model_selector_state_machine.clear(
-                    query.chat_id, query.message_id
-                )
+                model_selector_state_machine.clear(query.chat_id, query.message_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("effort.callback.clear_failed", error=str(exc))
             if query.callback_query_id is not None:
@@ -364,9 +316,7 @@ async def _handle_callback_effort(
             text = "\n\n".join(parts)
             from ...transport import MessageRef, RenderedMessage
 
-            rendered_text, entities = prepare_telegram(
-                MarkdownParts(header=text)
-            )
+            rendered_text, entities = prepare_telegram(MarkdownParts(header=text))
             extra: dict[str, Any] = {
                 "entities": entities,
                 "reply_markup": CLEAR_MARKUP,

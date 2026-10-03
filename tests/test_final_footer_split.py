@@ -60,13 +60,13 @@ def _entity_text(text: str, entity: dict[str, Any]) -> str:
 
 
 def _resume_entity_ok(msg: RenderedMessage) -> bool:
-    """The resume command's ``code`` entity still covers the command."""
+    """The resume command's ``code`` or ``pre`` entity still covers the command."""
     codes = [
         _entity_text(msg.text, e)
         for e in msg.extra.get("entities") or []
-        if e.get("type") == "code"
+        if e.get("type") in {"code", "pre"}
     ]
-    return any(c.startswith("claude resume sess-770") for c in codes)
+    return any("claude resume sess-770" in c for c in codes)
 
 
 async def _run(
@@ -123,14 +123,16 @@ async def test_split_final_puts_cost_outlier_and_usage_on_last_chunk(
     assert len(chunks) >= 3
     for chunk in chunks[:-1]:
         assert not any(mark in chunk.text for mark in FOOTER_MARKS), chunk.text
-        assert RESUME not in chunk.text
+    # Status head on first chunk
+    assert META in chunks[0].text
+    assert _resume_entity_ok(chunks[0])
+    # Footer on last chunk
     last = chunks[-1].text
     for line in (f"{COST}$1.03 · 1 tn · 2m 53s", OUTLIER, USAGE):
         assert last.count(line) == 1
-    # Footer order: meta, cost, outlier, usage, then the resume line last.
-    order = [last.index(m) for m in (META, COST, "\U0001f4b8", "⚡", RESUME)]
+    # Footer order: cost, outlier, usage
+    order = [last.index(m) for m in (COST, "\U0001f4b8", "⚡")]
     assert order == sorted(order)
-    assert _resume_entity_ok(chunks[-1])
     assert all(rb._utf16_len(c.text) <= rb._TELEGRAM_TEXT_LIMIT for c in chunks)
 
 
@@ -146,11 +148,11 @@ async def test_split_final_puts_standalone_budget_alert_on_last_chunk(
 
     assert len(chunks) >= 3
     assert all(BUDGET not in c.text for c in chunks[:-1])
+    assert META in chunks[0].text
+    assert _resume_entity_ok(chunks[0])
     last = chunks[-1].text
     assert last.count(BUDGET) == 1
     assert OUTLIER not in last and COST not in last and "⚡" not in last
-    assert last.index(META) < last.index(BUDGET) < last.index(RESUME)
-    assert _resume_entity_ok(chunks[-1])
 
 
 async def test_single_chunk_final_keeps_footer_before_resume(
@@ -164,9 +166,12 @@ async def test_single_chunk_final_keeps_footer_before_resume(
 
     assert "followups" not in final.extra
     text = final.text
-    assert text.index("All done!") < text.index(COST) < text.index("⚡")
-    assert text.index("⚡") < text.index(RESUME)
-    # The inserted lines shift the resume command's code entity with them.
+    assert (
+        text.index("claude resume sess-770")
+        < text.index("All done!")
+        < text.index(COST)
+        < text.index("⚡")
+    )
     assert _resume_entity_ok(final)
 
 
@@ -183,8 +188,12 @@ async def test_trim_mode_final_keeps_footer_on_the_single_message(
 
     assert "followups" not in final.extra
     text = final.text
-    assert text.index(COST) < text.index(OUTLIER) < text.index("⚡")
-    assert text.index("⚡") < text.index(RESUME)
+    assert (
+        text.index("claude resume sess-770")
+        < text.index(COST)
+        < text.index(OUTLIER)
+        < text.index("⚡")
+    )
     assert _resume_entity_ok(final)
     assert rb._utf16_len(text) <= rb._TELEGRAM_TEXT_LIMIT
 
@@ -210,7 +219,7 @@ async def test_near_limit_last_chunk_stays_under_telegram_limit(
     assert all(m in last.text for m in (COST, "\U0001f4b8", "⚡"))
     assert rb._utf16_len(last.text) <= rb._TELEGRAM_TEXT_LIMIT
     assert not [e for e in logs if e.get("event") == "final.footer_overflow"]
-    assert _resume_entity_ok(last)
+    assert _resume_entity_ok(chunks[0])
 
 
 # ── _insert_footer_line unit cases ──────────────────────────────────────────

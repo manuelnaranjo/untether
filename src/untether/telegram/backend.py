@@ -332,7 +332,9 @@ class TelegramBackend(TransportBackend):
             reply_to: int | None,
             caption: str | None,
         ) -> None:
-            if hasattr(transport, "_should_mention") and not transport._should_mention(chat_id):
+            if hasattr(transport, "_should_mention") and not transport._should_mention(
+                chat_id
+            ):
                 reply_to = None
             await bot.send_document(
                 chat_id=chat_id,

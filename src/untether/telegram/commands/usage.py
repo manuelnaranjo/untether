@@ -608,9 +608,7 @@ class UsageCommand:
     or the last session's token totals for other engines (#417)."""
 
     id = "usage"
-    description = (
-        "Show usage (Claude/Antigravity: subscription quota; other engines: session tokens)"
-    )
+    description = "Show usage (Claude/Antigravity: subscription quota; other engines: session tokens)"
 
     async def handle(self, ctx: CommandContext) -> CommandResult | None:
         from ..engine_overrides import SUBSCRIPTION_USAGE_SUPPORTED_ENGINES

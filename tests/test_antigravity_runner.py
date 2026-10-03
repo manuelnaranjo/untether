@@ -80,7 +80,9 @@ def test_translate_success_fixture() -> None:
     }
     assert completed_actions[("1", "completed")].ok is True
     assert completed_actions[("1", "completed")].action.detail["output"] == "hello"
-    assert completed_actions[("1", "completed")].action.detail["output_preview"] == "hello"
+    assert (
+        completed_actions[("1", "completed")].action.detail["output_preview"] == "hello"
+    )
     assert completed_actions[("1", "completed")].action.detail["input"] == {
         "CommandLine": "echo hello"
     }
@@ -95,7 +97,9 @@ def test_translate_success_fixture() -> None:
     assert completed.usage["duration_ms"] == 1200
 
 
-def test_translate_extracts_thoughts_from_transcript(tmp_path: Path, monkeypatch) -> None:
+def test_translate_extracts_thoughts_from_transcript(
+    tmp_path: Path, monkeypatch
+) -> None:
     session_id = "test-session-123"
     log_dir = tmp_path / "brain" / session_id / ".system_generated" / "logs"
     log_dir.mkdir(parents=True)
@@ -106,18 +110,24 @@ def test_translate_extracts_thoughts_from_transcript(tmp_path: Path, monkeypatch
     monkeypatch.setenv("ANTIGRAVITY_APP_DATA_DIR", str(tmp_path))
 
     state = AntigravityStreamState(session_id=session_id)
-    event = _decode_event({
-        "event": "step_update",
-        "step_update": {
-            "conversation_id": session_id,
-            "step_index": 1,
-            "state": "DONE",
-            "step_type": "agent_response",
-            "text_delta": "Done.",
+    event = _decode_event(
+        {
+            "event": "step_update",
+            "step_update": {
+                "conversation_id": session_id,
+                "step_index": 1,
+                "state": "DONE",
+                "step_type": "agent_response",
+                "text_delta": "Done.",
+            },
         }
-    })
-    events = translate_antigravity_event(event, title="antigravity", state=state, meta=None)
-    thought_events = [e for e in events if isinstance(e, ActionEvent) and e.action.kind == "thought"]
+    )
+    events = translate_antigravity_event(
+        event, title="antigravity", state=state, meta=None
+    )
+    thought_events = [
+        e for e in events if isinstance(e, ActionEvent) and e.action.kind == "thought"
+    ]
     assert len(thought_events) == 1
     assert thought_events[0].action.detail["thinking"] == "Analyzing code."
 
@@ -643,7 +653,6 @@ async def test_fetch_antigravity_usage_parsing(monkeypatch) -> None:
     }
 
 
-
 def test_antigravity_build_args_model_and_effort() -> None:
     from untether.runners.run_options import EngineRunOptions, apply_run_options
 
@@ -686,7 +695,9 @@ def test_antigravity_build_args_model_and_effort() -> None:
         assert "--effort" not in args_sonnet
 
     # 4. Model without effort levels with reasoning override -> effort is omitted
-    with apply_run_options(EngineRunOptions(model="claude-sonnet-4-6", reasoning="high")):
+    with apply_run_options(
+        EngineRunOptions(model="claude-sonnet-4-6", reasoning="high")
+    ):
         # New session: --effort high is omitted
         args_new = runner.build_args(
             "hi", resume=None, state=runner.new_state("hi", None)
@@ -705,7 +716,9 @@ def test_antigravity_build_args_model_and_effort() -> None:
         assert "--effort" not in args_resume
 
     # 5. gpt-oss-120b-medium without effort levels -> preserved, effort omitted
-    with apply_run_options(EngineRunOptions(model="gpt-oss-120b-medium", reasoning="medium")):
+    with apply_run_options(
+        EngineRunOptions(model="gpt-oss-120b-medium", reasoning="medium")
+    ):
         args_gpt = runner.build_args(
             "hi", resume=None, state=runner.new_state("hi", None)
         )
@@ -738,7 +751,11 @@ def test_antigravity_model_supports_effort_and_meta() -> None:
         DiscoveredModel(
             model_id="gemini-3.8-flash",
             effort_levels=("low", "medium", "high"),
-            raw_ids=("gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"),
+            raw_ids=(
+                "gemini-3.8-flash-low",
+                "gemini-3.8-flash-medium",
+                "gemini-3.8-flash-high",
+            ),
         ),
         DiscoveredModel(
             model_id="custom-no-effort",
@@ -753,7 +770,9 @@ def test_antigravity_model_supports_effort_and_meta() -> None:
     # Event meta doesn't set effort when model doesn't support it
     runner = AntigravityRunner()
     state = AntigravityStreamState()
-    with apply_run_options(EngineRunOptions(model="claude-sonnet-4-6", reasoning="high")):
+    with apply_run_options(
+        EngineRunOptions(model="claude-sonnet-4-6", reasoning="high")
+    ):
         decoded = _decode_event(
             {
                 "event": "init",

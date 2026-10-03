@@ -31,7 +31,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SYNCED_DIRS = ("tutorials", "how-to", "reference", "explanation", "faq")
 _SLUG_RE = re.compile(r"^[a-z0-9-]+$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
-_ENGINES = ("claude", "codex", "opencode", "gemini")
+_ENGINES = ("claude", "codex", "opencode", "antigravity")
 _CHAT = 123
 
 _REPO_URL = "https://github.com/littlebearapps/untether"
@@ -236,6 +236,7 @@ def _expected() -> dict[tuple[str, str], frozenset[str]]:
     for engine in _ENGINES:
         table[("home", engine)] = _NONE
         table[("ab", engine)] = _NONE
+        table[("mr", engine)] = _NONE
         table[("vb", engine)] = frozenset({_u("verbose-progress")})
         table[("ag", engine)] = _ENGINE_LINKS
         table[("md", engine)] = _ENGINE_LINKS
@@ -258,19 +259,19 @@ def _expected() -> dict[tuple[str, str], frozenset[str]]:
     table[("pm", "codex")] = frozenset(
         {_u("interactive-approval", "codex-cli--approval-policy")}
     )
-    table[("pm", "gemini")] = frozenset(
-        {_u("interactive-approval", "gemini-cli--approval-mode")}
+    table[("pm", "antigravity")] = frozenset(
+        {_u("interactive-approval", "antigravity-cli--approval-mode")}
     )
     table[("aq", "claude")] = frozenset(
         {_u("interactive-approval", "answering-questions")}
     )
     table[("dp", "claude")] = frozenset({_u("interactive-approval", "diff-previews")})
     table[("loop", "claude")] = frozenset({_u("schedule-tasks", "loop-mode")})
-    for engine in ("claude", "codex"):
+    for engine in ("claude", "codex", "antigravity"):
         table[("rs", engine)] = frozenset(
             {_u("model-reasoning", "set-reasoning-level")}
         )
-    for engine in ("claude", "opencode", "gemini"):
+    for engine in ("claude", "opencode", "antigravity"):
         table[("cu", engine)] = frozenset({_u("cost-budgets")})
     return table
 

@@ -483,7 +483,7 @@ class TestPermissionModeHomeHints:
         assert "agent decides" not in text
 
     @pytest.mark.anyio
-    async def test_home_hint_codex_gemini_unchanged(self, tmp_path):
+    async def test_home_hint_codex_antigravity_unchanged(self, tmp_path):
         ctx = _make_ctx(config_path=tmp_path / "prefs.json", default_engine="codex")
         await ConfigCommand().handle(ctx)
         assert (
@@ -492,8 +492,8 @@ class TestPermissionModeHomeHints:
         )
         ctx = _make_ctx(
             config_path=tmp_path / "prefs.json",
-            default_engine="gemini",
-            engine_ids=("gemini",),
+            default_engine="antigravity",
+            engine_ids=("antigravity",),
         )
         await ConfigCommand().handle(ctx)
         assert "read-only</b>  · write tools blocked" in _last_send_msg(ctx).text
@@ -1968,7 +1968,7 @@ class TestReasoning:
     def test_reasoning_supported_engines_all_parametrised(self):
         from untether.telegram.engine_overrides import REASONING_SUPPORTED_ENGINES
 
-        assert set(REASONING_SUPPORTED_ENGINES) == {"claude", "codex"}
+        assert set(REASONING_SUPPORTED_ENGINES) == {"claude", "codex", "antigravity"}
 
     @pytest.mark.anyio
     async def test_reasoning_clear_returns_home(self, tmp_path):
@@ -2212,9 +2212,7 @@ class TestReasoning:
         assert "config:rs" not in _buttons_data(msg)
 
     @pytest.mark.anyio
-    async def test_reasoning_page_informs_antigravity_unsupported_model(
-        self, tmp_path
-    ):
+    async def test_reasoning_page_informs_antigravity_unsupported_model(self, tmp_path):
         """Reasoning page informs that model does not support effort levels."""
         from untether.runners.antigravity import reset_model_cache
         from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path

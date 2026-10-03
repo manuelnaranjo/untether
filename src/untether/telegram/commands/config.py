@@ -718,6 +718,7 @@ async def _page_planmode(ctx: CommandContext, action: str | None = None) -> None
 
     # --- Antigravity approval mode actions ---
     if engine == "antigravity" and action in _ANTIGRAVITY_AM_MODES:
+        current = await prefs.get_engine_override(chat_id, engine)
         updated = with_override(current, permission_mode=_ANTIGRAVITY_AM_MODES[action])
         await prefs.set_engine_override(chat_id, engine, updated)
         logger.info("config.approval_mode.set", chat_id=chat_id, mode=action)
@@ -852,7 +853,7 @@ async def _page_planmode(ctx: CommandContext, action: str | None = None) -> None
             "",
             f"Current: <b>{current_label}</b>",
             "",
-            _learn_more("interactive-approval", "gemini-cli--approval-mode"),
+            _learn_more("interactive-approval", "antigravity-cli--approval-mode"),
         ]
 
         buttons = [
@@ -2124,8 +2125,6 @@ async def _page_mention_requester(
         "Controls whether responses quote and ping the user on Telegram.",
         "• <b>on</b> — quote the requester's message when replying",
         "• <b>off</b> — reply without quoting or pinging the requester",
-        "",
-        f'📖 <a href="{_DOCS_BASE}telegram/">Learn more</a>',
     ]
 
     buttons = [

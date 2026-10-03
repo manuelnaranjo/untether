@@ -2633,8 +2633,8 @@ async def test_model_command_list_antigravity(tmp_path: Path) -> None:
     text = call["message"].text
     assert "available models (antigravity):" in text
     # Shows model ID with effort info, not descriptive name
-    assert "• gemini-3.8-flash (effort: low, high)" in text
-    assert "• claude-sonnet-4-6" in text
+    assert "- gemini-3.8-flash (effort: low, high)" in text
+    assert "- claude-sonnet-4-6" in text
     assert "Gemini 3.8 Flash" not in text
 
     reply_markup = call["message"].extra.get("reply_markup")
@@ -2990,10 +2990,7 @@ async def test_execute_antigravity_model_switch_omits_effort(tmp_path: Path) -> 
 
     reset_model_cache()
     script = tmp_path / "agy"
-    script.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\\n' \"$*\"\n"
-    )
+    script.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\"\n")
     script.chmod(0o755)
 
     # claude-sonnet-4-6 does not support effort -> effort 'high' omitted
@@ -6658,7 +6655,9 @@ async def test_resume_as_message_sends_isolated_code_block() -> None:
 
     # 1. Resume command is edited into progress_ref as its own message with bash code block
     resume_edits = [
-        c for c in transport.edit_calls if c["message"].text.strip() == "codex resume sess-abc"
+        c
+        for c in transport.edit_calls
+        if c["message"].text.strip() == "codex resume sess-abc"
     ]
     assert len(resume_edits) == 1
     assert any(
@@ -6671,7 +6670,9 @@ async def test_resume_as_message_sends_isolated_code_block() -> None:
     assert "Here is the final response." in answer_call["message"].text
     assert "🏷 dir: untether @master" in answer_call["message"].text
     assert "codex resume sess-abc" not in answer_call["message"].text
-    assert answer_call["message"].text.index("🏷 dir: untether @master") < answer_call["message"].text.index("Here is the final response.")
+    assert answer_call["message"].text.index("🏷 dir: untether @master") < answer_call[
+        "message"
+    ].text.index("Here is the final response.")
 
 
 @pytest.mark.anyio
@@ -6710,7 +6711,9 @@ async def test_resume_as_message_edits_progress_message() -> None:
 
     # progress_ref is edited to become the resume message
     resume_edits = [
-        c for c in transport.edit_calls if c["message"].text.strip() == "antigravity resume conv-xyz"
+        c
+        for c in transport.edit_calls
+        if c["message"].text.strip() == "antigravity resume conv-xyz"
     ]
     assert len(resume_edits) == 1
     assert any(
@@ -6720,6 +6723,8 @@ async def test_resume_as_message_edits_progress_message() -> None:
 
     # Final answer is sent as a new message
     answer_sends = [
-        c for c in transport.send_calls if "Task finished successfully." in c["message"].text
+        c
+        for c in transport.send_calls
+        if "Task finished successfully." in c["message"].text
     ]
     assert len(answer_sends) == 1

@@ -196,11 +196,7 @@ def _read_antigravity_transcript_thoughts(session_id: str) -> list[tuple[int, st
         app_dir = os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get(
             "AGY_APP_DATA_DIR"
         )
-        base = (
-            Path(app_dir)
-            if app_dir
-            else Path.home() / ".gemini" / "antigravity-cli"
-        )
+        base = Path(app_dir) if app_dir else Path.home() / ".gemini" / "antigravity-cli"
         path = (
             base
             / "brain"
@@ -394,9 +390,7 @@ def translate_antigravity_event(
         if state.session_id:
             resume = ResumeToken(engine=ENGINE, value=state.session_id)
             # Catch any thoughts from transcript that weren't captured during streaming
-            for idx, thought in _read_antigravity_transcript_thoughts(
-                state.session_id
-            ):
+            for idx, thought in _read_antigravity_transcript_thoughts(state.session_id):
                 if idx not in state.seen_thoughts:
                     state.seen_thoughts.add(idx)
                     thought_action = Action(
@@ -879,7 +873,9 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
                 if (run_options is not None and run_options.model)
                 else self.model
             )
-            if not effective_model or antigravity_model_supports_effort(str(effective_model)):
+            if not effective_model or antigravity_model_supports_effort(
+                str(effective_model)
+            ):
                 if meta is None:
                     meta = {}
                 meta["effort"] = run_options.reasoning

@@ -717,4 +717,3 @@ class TestSuperAndUltraVerboseFinalParts:
         )
         assert parts.body == "All checks passed."
         assert "<blockquote" not in (parts.body or "")
-

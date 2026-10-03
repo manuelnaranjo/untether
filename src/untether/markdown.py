@@ -691,13 +691,12 @@ class MarkdownFormatter:
 
             # 1. Thought / Thinking block
             if kind == "thought" or "thinking" in detail:
-                thinking_text = str(detail.get("thinking") or action.title or "").strip()
+                thinking_text = str(
+                    detail.get("thinking") or action.title or ""
+                ).strip()
                 if thinking_text:
                     blocks.append(
-                        f"{open_tag}\n"
-                        f"💭 **Thinking**\n\n"
-                        f"{thinking_text}\n"
-                        f"{close_tag}"
+                        f"{open_tag}\n💭 **Thinking**\n\n{thinking_text}\n{close_tag}"
                     )
                 continue
 
@@ -712,10 +711,7 @@ class MarkdownFormatter:
 
             # Tool header: Status + Kind/Title
             tool_name = (
-                detail.get("tool_name")
-                or detail.get("name")
-                or action.title
-                or "tool"
+                detail.get("tool_name") or detail.get("name") or action.title or "tool"
             )
             title = action.title or tool_name
             header_line = f"{status_icon} **{title}**"
@@ -734,7 +730,9 @@ class MarkdownFormatter:
                 )
             elif isinstance(inp, dict) and inp:
                 if "TargetFile" in inp or "file_path" in inp:
-                    fp = inp.get("TargetFile") or inp.get("file_path") or inp.get("path")
+                    fp = (
+                        inp.get("TargetFile") or inp.get("file_path") or inp.get("path")
+                    )
                     content_sections.append(f"**File:** `{relativize_path(str(fp))}`")
                     other_keys = {
                         k: v
@@ -794,12 +792,9 @@ class MarkdownFormatter:
                 if len(out_str) > 3000:
                     truncated_count = len(out_str) - 3000
                     out_str = (
-                        out_str[:3000]
-                        + f"\n\n… [truncated {truncated_count} chars]"
+                        out_str[:3000] + f"\n\n… [truncated {truncated_count} chars]"
                     )
-                content_sections.append(
-                    f"**Output:**\n{_safe_code_fence(out_str)}"
-                )
+                content_sections.append(f"**Output:**\n{_safe_code_fence(out_str)}")
 
             exit_code = detail.get("exit_code")
             if isinstance(exit_code, int) and exit_code != 0:
@@ -807,12 +802,7 @@ class MarkdownFormatter:
 
             if content_sections:
                 inner = "\n\n".join(content_sections)
-                blocks.append(
-                    f"{header_line}\n"
-                    f"{open_tag}\n"
-                    f"{inner}\n"
-                    f"{close_tag}"
-                )
+                blocks.append(f"{header_line}\n{open_tag}\n{inner}\n{close_tag}")
             else:
                 blocks.append(header_line)
 
@@ -870,7 +860,7 @@ class MarkdownFormatter:
         if state.resume_line:
             cmd = state.resume_line.strip()
             if cmd.startswith("\u21a9\ufe0f"):
-                cmd = cmd[len("\u21a9\ufe0f"):].strip()
+                cmd = cmd[len("\u21a9\ufe0f") :].strip()
             elif cmd.startswith("\u21a9"):
                 cmd = cmd[1:].strip()
             if cmd.startswith("```"):

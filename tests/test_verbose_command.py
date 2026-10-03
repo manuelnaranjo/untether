@@ -140,4 +140,3 @@ async def test_verbose_toggle_from_super_and_ultra():
     assert result2 is not None
     assert "off" in result2.text.lower()
     assert get_verbosity_override(123) == "compact"
-

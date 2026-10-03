@@ -591,7 +591,9 @@ def test_status_head_and_highlighted_resume_rendering() -> None:
     pre_entities = [e for e in entities if e.get("type") == "pre"]
     assert any(
         e.get("language") == "bash"
-        and text.encode("utf-16-le")[2 * e["offset"] : 2 * (e["offset"] + e["length"])].decode("utf-16-le").strip()
+        and text.encode("utf-16-le")[2 * e["offset"] : 2 * (e["offset"] + e["length"])]
+        .decode("utf-16-le")
+        .strip()
         == "agy --conversation conv-456"
         for e in pre_entities
     )
@@ -603,4 +605,3 @@ def test_status_head_and_highlighted_resume_rendering() -> None:
     assert "agy --conversation" not in cleaned
     assert "```" not in cleaned
     assert "Here is the solution." in cleaned
-

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import re
 import shutil
 import time
@@ -166,9 +167,7 @@ class ModelSelectorStateMachine:
 
     def _cleanup(self) -> None:
         now = time.monotonic()
-        expired = [
-            k for k, v in self._states.items() if now - v.created_at > self._ttl
-        ]
+        expired = [k for k, v in self._states.items() if now - v.created_at > self._ttl]
         for k in expired:
             self._states.pop(k, None)
 
@@ -196,7 +195,7 @@ def resolve_antigravity_cmd(
     if last_cmd:
         return last_cmd
     if chat_prefs is not None and hasattr(chat_prefs, "_path"):
-        try:
+        with contextlib.suppress(Exception):
             config_path = chat_prefs._path.with_name("untether.toml")
             if config_path.exists():
                 from ...config import load_config
@@ -209,8 +208,6 @@ def resolve_antigravity_cmd(
                     import os
 
                     return os.path.expanduser(raw)
-        except Exception:  # noqa: BLE001
-            pass
     return default_antigravity_cmd()
 
 
@@ -222,16 +219,14 @@ async def resolve_antigravity_conversation_id(
     chat_prefs: ChatPrefsStore | None = None,
 ) -> str | None:
     if tkey is not None and topic_store is not None:
-        try:
+        with contextlib.suppress(Exception):
             token = await topic_store.get_session_resume(
                 tkey[0], tkey[1], "antigravity"
             )
             if token and token.value:
                 return token.value
-        except Exception:  # noqa: BLE001
-            pass
     if chat_prefs is not None and hasattr(chat_prefs, "_path"):
-        try:
+        with contextlib.suppress(Exception):
             from ..chat_sessions import ChatSessionStore, resolve_sessions_path
 
             sessions_path = resolve_sessions_path(chat_prefs._path)
@@ -242,8 +237,6 @@ async def resolve_antigravity_conversation_id(
                 )
                 if token and token.value:
                     return token.value
-        except Exception:  # noqa: BLE001
-            pass
     return None
 
 
@@ -272,9 +265,7 @@ async def execute_antigravity_model_switch(
     if conversation_id:
         args.extend(["--conversation", conversation_id])
     model_arg = (
-        f"{model}-{effort}"
-        if effort and not model.endswith(f"-{effort}")
-        else model
+        f"{model}-{effort}" if effort and not model.endswith(f"-{effort}") else model
     )
     args.extend(["--model", model_arg, "-p", "/model"])
 
@@ -423,9 +414,8 @@ async def _render_effort_view(
         field="reasoning",
     )
     res_model = (model_res.value or "").lower()
-    model_matches = (
-        res_model == model_id.lower()
-        or res_model.startswith(f"{model_id.lower()}-")
+    model_matches = res_model == model_id.lower() or res_model.startswith(
+        f"{model_id.lower()}-"
     )
     current_effort = (resolution.value or "").lower() if model_matches else ""
 
@@ -750,10 +740,7 @@ async def _handle_callback_model(
             if matched_m is not None
             else antigravity_model_supports_effort(model, discovered_models=models)
         )
-        if (
-            engine == "antigravity"
-            and supports_effort
-        ):
+        if engine == "antigravity" and supports_effort:
             model_id = matched_m.model_id if matched_m is not None else model
             effort_levels = (
                 matched_m.effort_levels
@@ -897,31 +884,10 @@ async def _handle_callback_model(
                 chat_prefs=chat_prefs,
                 chat_id=query.chat_id,
                 engine=engine,
-                update=lambda current: EngineOverrides(
+                update=lambda current: with_override(
+                    current,
                     model=model,
                     reasoning=level,
-                    permission_mode=current.permission_mode
-                    if current is not None
-                    else None,
-                    ask_questions=current.ask_questions
-                    if current is not None
-                    else None,
-                    diff_preview=current.diff_preview if current is not None else None,
-                    show_api_cost=current.show_api_cost
-                    if current is not None
-                    else None,
-                    show_subscription_usage=current.show_subscription_usage
-                    if current is not None
-                    else None,
-                    show_resume_line=current.show_resume_line
-                    if current is not None
-                    else None,
-                    budget_enabled=current.budget_enabled
-                    if current is not None
-                    else None,
-                    budget_auto_cancel=current.budget_auto_cancel
-                    if current is not None
-                    else None,
                 ),
                 topic_unavailable="topic model overrides are unavailable.",
                 chat_unavailable="chat model overrides are unavailable (no config path).",
@@ -977,9 +943,7 @@ async def _handle_callback_model(
         }
         try:
             await cfg.exec_cfg.transport.edit(
-                ref=MessageRef(
-                    channel_id=query.chat_id, message_id=query.message_id
-                ),
+                ref=MessageRef(channel_id=query.chat_id, message_id=query.message_id),
                 message=RenderedMessage(text=rendered_text, extra=extra),
             )
         except Exception as exc:  # noqa: BLE001
@@ -1013,31 +977,10 @@ async def _handle_callback_model(
                 chat_prefs=chat_prefs,
                 chat_id=query.chat_id,
                 engine=engine,
-                update=lambda current: EngineOverrides(
+                update=lambda current: with_override(
+                    current,
                     model=None,
                     reasoning=current.reasoning if current is not None else None,
-                    permission_mode=current.permission_mode
-                    if current is not None
-                    else None,
-                    ask_questions=current.ask_questions
-                    if current is not None
-                    else None,
-                    diff_preview=current.diff_preview if current is not None else None,
-                    show_api_cost=current.show_api_cost
-                    if current is not None
-                    else None,
-                    show_subscription_usage=current.show_subscription_usage
-                    if current is not None
-                    else None,
-                    show_resume_line=current.show_resume_line
-                    if current is not None
-                    else None,
-                    budget_enabled=current.budget_enabled
-                    if current is not None
-                    else None,
-                    budget_auto_cancel=current.budget_auto_cancel
-                    if current is not None
-                    else None,
                 ),
                 topic_unavailable="topic model overrides are unavailable.",
                 chat_unavailable="chat model overrides are unavailable (no config path).",
