@@ -19,6 +19,7 @@ from .model import _handle_callback_model as handle_callback_model
 from .model import _handle_model_command as handle_model_command
 from .parse import _parse_slash_command as parse_slash_command
 from .reasoning import _handle_reasoning_command as handle_reasoning_command
+from .relay import split_relay_command
 from .topics import _handle_chat_ctx_command as handle_chat_ctx_command
 from .topics import _handle_chat_new_command as handle_chat_new_command
 from .topics import _handle_ctx_command as handle_ctx_command
@@ -55,4 +56,5 @@ __all__ = [
     "save_file_put",
     "set_command_menu",
     "should_show_resume_line",
+    "split_relay_command",
 ]

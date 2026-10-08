@@ -19,6 +19,22 @@ class DirectiveError(RuntimeError):
     pass
 
 
+def unescape_relayed_command(text: str) -> str:
+    """If ``text`` begins with an escaped engine command prefix (``//`` or ``/relay ``),
+    unwrap it into a raw engine slash command ``/<cmd>``."""
+    stripped = text.lstrip()
+    if stripped.startswith("//"):
+        leading = text[: len(text) - len(stripped)]
+        return leading + stripped[1:]
+    if stripped.startswith("/relay "):
+        leading = text[: len(text) - len(stripped)]
+        rest = stripped[len("/relay ") :].strip()
+        if rest and not rest.startswith("/"):
+            rest = f"/{rest}"
+        return leading + rest
+    return text
+
+
 def parse_directives(
     text: str,
     *,
@@ -81,7 +97,12 @@ def parse_directives(
         break
 
     if consumed == 0:
-        return ParsedDirectives(prompt=text, engine=None, project=None, branch=None)
+        return ParsedDirectives(
+            prompt=unescape_relayed_command(text),
+            engine=None,
+            project=None,
+            branch=None,
+        )
 
     if consumed < len(tokens):
         remainder = " ".join(tokens[consumed:])
@@ -91,7 +112,10 @@ def parse_directives(
 
     prompt = "\n".join(lines).strip()
     return ParsedDirectives(
-        prompt=prompt, engine=engine, project=project, branch=branch
+        prompt=unescape_relayed_command(prompt),
+        engine=engine,
+        project=project,
+        branch=branch,
     )
 
 

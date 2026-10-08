@@ -56,6 +56,7 @@ from .commands.handlers import (
     save_file_put,
     set_command_menu,
     should_show_resume_line,
+    split_relay_command,
 )
 from .commands.parse import is_cancel_command, parse_dot_typo
 from .commands.reply import make_reply
@@ -3172,6 +3173,12 @@ async def run_main_loop(
                 followup_split = split_followup_command(command_id, args_text)
                 if followup_split is not None:
                     followup_override, text = followup_split
+                    command_id = None
+                    args_text = ""
+
+                relay_split = split_relay_command(command_id, args_text)
+                if relay_split is not None:
+                    text = relay_split
                     command_id = None
                     args_text = ""
 

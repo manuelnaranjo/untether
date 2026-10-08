@@ -70,6 +70,7 @@ uv run pytest tests/test_*.py -x # specific file
 | `/browse` | Browse project files |
 | `/config` | Interactive settings menu |
 | `/steer` / `/queue` | Claude: steer a follow-up into the running session, or queue it (bare form sets the chat/topic default) |
+| `/relay` | Relay a slash command directly to the active engine (`/relay <cmd>` or `//<cmd>`) |
 | `/verbose` | Toggle verbose progress mode |
 | `/restart` | Gracefully restart Untether |
 

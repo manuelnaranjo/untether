@@ -7,13 +7,15 @@ def is_cancel_command(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
         return False
+    if stripped.startswith("//"):
+        return False
     command = stripped.split(maxsplit=1)[0]
     return command == "/cancel" or command.startswith("/cancel@")
 
 
 def _parse_slash_command(text: str) -> tuple[str | None, str]:
     stripped = text.lstrip()
-    if not stripped.startswith("/"):
+    if not stripped.startswith("/") or stripped.startswith("//"):
         return None, text
     lines = stripped.splitlines()
     if not lines:

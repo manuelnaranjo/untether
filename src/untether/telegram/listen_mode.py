@@ -59,6 +59,9 @@ def should_trigger_run(
         and not implicit_topic_reply
     ):
         return True
+    # //command is an explicit escape to relay a slash command directly to the engine
+    if text.lstrip().startswith("//"):
+        return True
     command_id, _ = _parse_slash_command(text)
     if not command_id:
         return False
