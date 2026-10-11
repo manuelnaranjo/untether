@@ -104,6 +104,16 @@ class TestUpdateFrom:
         assert cfg.forward_coalesce_s == 3.5
         assert cfg.media_group_debounce_s == 2.5
 
+    def test_status_head_hot_reloads(self, cfg: TelegramBridgeConfig):
+        """status_head is hot-reloadable and not restart-required."""
+        assert _settings().status_head is False
+        assert cfg.status_head is False
+        cfg.update_from(_settings(status_head=True))
+        assert cfg.status_head is True
+        cfg.update_from(_settings(status_head=False))
+        assert cfg.status_head is False
+        assert "status_head" not in TelegramTransportSettings.RESTART_REQUIRED_FIELDS
+
     def test_388_approval_originator_only_hot_reloads(self, cfg: TelegramBridgeConfig):
         """#388: opt-in, off by default, and not restart-required."""
         assert _settings().approval_originator_only is False

@@ -370,6 +370,7 @@ class TelegramBackend(TransportBackend):
             max_actions=progress_cfg.max_actions,
             verbosity=progress_cfg.verbosity,
             show_context_usage=progress_cfg.show_context_usage,
+            status_head=bool(progress_cfg.status_head or settings.status_head),
         )
         presenter = TelegramPresenter(
             formatter=formatter,
@@ -410,6 +411,7 @@ class TelegramBackend(TransportBackend):
             exec_cfg=exec_cfg,
             session_mode=settings.session_mode,
             show_resume_line=settings.show_resume_line,
+            status_head=settings.status_head,
             followup_mode=settings.followup_mode,
             voice_transcription=settings.voice_transcription,
             voice_max_bytes=int(settings.voice_max_bytes),

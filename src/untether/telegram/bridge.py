@@ -206,6 +206,7 @@ class TelegramBridgeConfig:
     exec_cfg: ExecBridgeConfig
     session_mode: Literal["stateless", "chat"] = "stateless"
     show_resume_line: bool = True
+    status_head: bool = False
     # #775: global default follow-up mode (hot-reloads).
     followup_mode: Literal["queue", "steer"] = "queue"
     voice_transcription: bool = False
@@ -248,6 +249,7 @@ class TelegramBridgeConfig:
         store initialisation.
         """
         self.show_resume_line = bool(settings.show_resume_line)
+        self.status_head = bool(settings.status_head)
         self.followup_mode = settings.followup_mode
         self.voice_transcription = bool(settings.voice_transcription)
         self.voice_max_bytes = int(settings.voice_max_bytes)

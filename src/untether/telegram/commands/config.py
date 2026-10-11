@@ -468,12 +468,31 @@ async def _page_home(ctx: CommandContext) -> None:
     else:
         rl_label = "on" if _resume_default else "off"
 
+    # --- Status head ---
+    _status_head_default = False
+    try:
+        from ...settings import load_settings_if_exists as _load_sh_cfg
+
+        _sh_result = _load_sh_cfg()
+        if _sh_result is not None:
+            _status_head_default = getattr(
+                _sh_result[0].transports.telegram, "status_head", False
+            ) or getattr(_sh_result[0].progress, "status_head", False)
+    except (OSError, ValueError, KeyError):
+        pass
+
+    if engine_override and engine_override.status_head is not None:
+        sh_label = "on" if engine_override.status_head else "off"
+    else:
+        sh_label = "on" if _status_head_default else "off"
+
     # --- Display ---
     lines.append("<b>Display</b>")
     if show_cost_usage:
         lines.append(f"Cost & usage: <b>{cu_label}</b>")
     lines.append(f"Verbose: <b>{vb_display}</b>{_home_hint('vb', verbose_label)}")
     lines.append(f"Resume line: <b>{rl_label}</b>")
+    lines.append(f"Status head: <b>{sh_label}</b>")
     lines.append("")
 
     # --- Routing ---
@@ -552,19 +571,24 @@ async def _page_home(ctx: CommandContext) -> None:
         )
         buttons.append(
             [
-                {"text": "📡 Listen", "callback_data": "config:tr"},
+                {"text": "🔝 Status head", "callback_data": "config:sh"},
                 {"text": "🔁 Loop mode", "callback_data": "config:loop"},
             ]
         )
         buttons.append(
             [
+                {"text": "📡 Listen", "callback_data": "config:tr"},
                 {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
-                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
             ]
         )
         buttons.append(
             [
+                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
                 {"text": "↪️ Follow-up", "callback_data": "config:fu"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -582,13 +606,18 @@ async def _page_home(ctx: CommandContext) -> None:
         )
         buttons.append(
             [
+                {"text": "🔝 Status head", "callback_data": "config:sh"},
                 {"text": "📡 Listen", "callback_data": "config:tr"},
-                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
             ]
         )
         buttons.append(
             [
                 {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
+                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -608,11 +637,16 @@ async def _page_home(ctx: CommandContext) -> None:
         )
         buttons.append(
             [
+                {"text": "🔝 Status head", "callback_data": "config:sh"},
                 {"text": "📡 Listen", "callback_data": "config:tr"},
-                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
             ]
         )
-        buttons.append([{"text": "ℹ️ About", "callback_data": "config:ab"}])
+        buttons.append(
+            [
+                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
+                {"text": "ℹ️ About", "callback_data": "config:ab"},
+            ]
+        )
     else:
         # Other engines
         row1 = []
@@ -622,8 +656,13 @@ async def _page_home(ctx: CommandContext) -> None:
             row1.append({"text": "📋 Permission mode", "callback_data": "config:pm"})
         if show_cost_usage:
             row1.append({"text": "💰 Cost & usage", "callback_data": "config:cu"})
-        row1.append({"text": "↩️ Resume line", "callback_data": "config:rl"})
         buttons.append(row1)
+        buttons.append(
+            [
+                {"text": "↩️ Resume line", "callback_data": "config:rl"},
+                {"text": "🔝 Status head", "callback_data": "config:sh"},
+            ]
+        )
         buttons.append(
             [
                 {"text": "🔍 Verbose", "callback_data": "config:vb"},
@@ -2647,6 +2686,85 @@ async def _page_resume_line(ctx: CommandContext, action: str | None = None) -> N
 
 
 # ---------------------------------------------------------------------------
+# Status head
+# ---------------------------------------------------------------------------
+
+
+async def _page_status_head(ctx: CommandContext, action: str | None = None) -> None:
+    from ..chat_prefs import ChatPrefsStore, resolve_prefs_path
+    from ..engine_overrides import with_override
+
+    config_path = ctx.config_path
+    if config_path is None:
+        await _respond(
+            ctx,
+            "<b>🔝 Status head</b>\n\nUnavailable (no config path).",
+            [[{"text": "← Back", "callback_data": "config:home"}]],
+        )
+        return
+
+    prefs = ChatPrefsStore(resolve_prefs_path(config_path))
+    chat_id = ctx.message.channel_id
+    current_engine, _ = await _resolve_effective_engine(ctx)
+
+    if action in ("on", "off", "clr"):
+        current = await prefs.get_engine_override(chat_id, current_engine)
+        new_val = {"on": True, "off": False, "clr": None}[action]
+        updated = with_override(current, status_head=new_val)
+        await prefs.set_engine_override(chat_id, current_engine, updated)
+        logger.info("config.status_head.set", chat_id=chat_id, value=new_val)
+        await _page_home(ctx)
+        return
+
+    # Display
+    override = await prefs.get_engine_override(chat_id, current_engine)
+    sh = override.status_head if override else None
+
+    _status_head_default = False
+    try:
+        from ...settings import load_settings_if_exists as _load_sh_cfg
+
+        _sh_result = _load_sh_cfg()
+        if _sh_result is not None:
+            _status_head_default = getattr(
+                _sh_result[0].transports.telegram, "status_head", False
+            ) or getattr(_sh_result[0].progress, "status_head", False)
+    except (OSError, ValueError, KeyError):
+        pass
+
+    sh_label = (
+        "on"
+        if sh is True
+        else ("off" if sh is False else ("on" if _status_head_default else "off"))
+    )
+
+    lines = [
+        "<b>🔝 Status head</b>",
+        "",
+        f"Current: <b>{sh_label}</b>",
+        "",
+        "Places metadata and resume command at the top of the message",
+        "instead of the trailing footer.",
+        "",
+        _learn_more("telegram"),
+    ]
+
+    buttons = [
+        _toggle_row(
+            "Status head",
+            current=sh,
+            default=_status_head_default,
+            on_data="config:sh:on",
+            off_data="config:sh:off",
+            clr_data="config:sh:clr",
+        ),
+        [{"text": "← Back", "callback_data": "config:home"}],
+    ]
+
+    await _respond(ctx, "\n".join(lines), buttons)
+
+
+# ---------------------------------------------------------------------------
 # About
 # ---------------------------------------------------------------------------
 
@@ -2898,6 +3016,7 @@ _PAGES: dict[str, object] = {
     "dp": _page_diff_preview,
     "cu": _page_cost_usage,
     "rl": _page_resume_line,
+    "sh": _page_status_head,
     "ab": _page_about,
     "loop": _page_loop,
     "gt": _page_agy_gate,
@@ -3106,6 +3225,11 @@ class ConfigCommand:
                 "on": "Resume line: on",
                 "off": "Resume line: off",
                 "clr": "Resume line: cleared",
+            },
+            "sh": {
+                "on": "Status head: on",
+                "off": "Status head: off",
+                "clr": "Status head: cleared",
             },
             "loop": {
                 "on": "🔁 Loop mode: on",

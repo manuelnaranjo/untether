@@ -208,6 +208,7 @@ class TelegramTransportSettings(BaseModel):
     voice_transcription_url_allowlist: list[str] = Field(default_factory=list)
     session_mode: Literal["stateless", "chat"] = "stateless"
     show_resume_line: bool = True
+    status_head: bool = False
     # #775: what a message sent during a live Claude run does by default —
     # "queue" (wait for the turn to end) or "steer" (fold it into the running
     # turn). Per-chat / per-topic overrides via /config, /steer and /queue.
@@ -763,6 +764,7 @@ class ProgressSettings(BaseModel):
     # #819: Claude's context-window use as ``N% ctx`` at the end of the
     # progress / final / turn header line. Display-only kill switch.
     show_context_usage: bool = True
+    status_head: bool = False
 
 
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")

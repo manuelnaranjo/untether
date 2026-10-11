@@ -30,12 +30,20 @@ class MarkdownParts:
     header: str
     body: str | None = None
     footer: str | None = None
+    status_head: str | None = None
 
 
 def assemble_markdown_parts(parts: MarkdownParts) -> str:
-    return "\n\n".join(
-        chunk for chunk in (parts.header, parts.body, parts.footer) if chunk
-    )
+    chunks: list[str] = []
+    if parts.header:
+        chunks.append(parts.header)
+    if parts.status_head:
+        chunks.append(parts.status_head)
+    if parts.body:
+        chunks.append(parts.body)
+    if parts.footer:
+        chunks.append(parts.footer)
+    return "\n\n".join(chunks)
 
 
 def format_changed_file_path(
@@ -660,6 +668,14 @@ def format_meta_line(meta: dict[str, Any]) -> str | None:
     return HEADER_SEP.join(parts) if parts else None
 
 
+def _safe_code_fence(text: str, lang: str = "") -> str:
+    """Format text in a safe markdown code fence, avoiding fence collisions."""
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return f"{fence}{lang}\n{text}\n{fence}"
+
+
 class MarkdownFormatter:
     def __init__(
         self,
@@ -668,6 +684,7 @@ class MarkdownFormatter:
         command_width: int | None = MAX_PROGRESS_CMD_LEN,
         verbosity: Literal["compact", "verbose"] = "compact",
         show_context_usage: bool = True,
+        status_head: bool = False,
     ) -> None:
         self.max_actions = max(0, int(max_actions))
         self.command_width = command_width
@@ -675,6 +692,7 @@ class MarkdownFormatter:
         # #819: ``[progress] show_context_usage`` — read at every render, set
         # per run by ``refresh_from`` (hot reload).
         self.show_context_usage = show_context_usage
+        self.status_head = status_head
 
     def refresh_from(self, progress: Any) -> None:
         """Update mutable formatting knobs from a ``ProgressSettings`` snapshot (#269).
@@ -695,6 +713,9 @@ class MarkdownFormatter:
         show_context_usage = getattr(progress, "show_context_usage", None)
         if isinstance(show_context_usage, bool):
             self.show_context_usage = show_context_usage
+        status_head = getattr(progress, "status_head", None)
+        if isinstance(status_head, bool):
+            self.status_head = status_head
 
     def _context_pct(self, state: ProgressState) -> int | None:
         return state.context_pct if self.show_context_usage else None
@@ -720,9 +741,13 @@ class MarkdownFormatter:
         if state.background:
             # #777: live background tasks, below the action lines.
             body = f"{body}\n\n{state.background}" if body else state.background
-        return MarkdownParts(
-            header=header, body=body, footer=self._format_footer(state)
-        )
+        if self.status_head:
+            sh = self._format_status_head(state)
+            footer = None
+        else:
+            sh = None
+            footer = self._format_footer(state)
+        return MarkdownParts(header=header, body=body, footer=footer, status_head=sh)
 
     def render_final_parts(
         self,
@@ -743,9 +768,40 @@ class MarkdownFormatter:
         )
         answer = (answer or "").strip()
         body = answer if answer else None
-        return MarkdownParts(
-            header=header, body=body, footer=self._format_footer(state)
-        )
+        if self.status_head:
+            sh = self._format_status_head(state)
+            footer = None
+        else:
+            sh = None
+            footer = self._format_footer(state)
+        return MarkdownParts(header=header, body=body, footer=footer, status_head=sh)
+
+    def _format_status_head(self, state: ProgressState) -> str | None:
+        blocks: list[str] = []
+        info_parts: list[str] = []
+        if state.context_line:
+            info_parts.append(state.context_line)
+        if state.meta_line:
+            info_parts.append(state.meta_line)
+        if info_parts:
+            blocks.append("\N{LABEL} " + " | ".join(info_parts))
+        if state.resume_line:
+            cmd = state.resume_line.strip()
+            if cmd.startswith("\u21a9\ufe0f"):
+                cmd = cmd[len("\u21a9\ufe0f") :].strip()
+            elif cmd.startswith("\u21a9"):
+                cmd = cmd[1:].strip()
+            if cmd.startswith("```"):
+                cmd = cmd.strip("`")
+                if "\n" in cmd:
+                    cmd = cmd.split("\n", 1)[1]
+            elif cmd.startswith("`") and cmd.endswith("`") and len(cmd) >= 2:
+                cmd = cmd[1:-1].strip()
+            if cmd:
+                blocks.append(_safe_code_fence(cmd, "bash"))
+        if not blocks:
+            return None
+        return "\n\n".join(blocks)
 
     def _format_footer(self, state: ProgressState) -> str | None:
         lines: list[str] = []
