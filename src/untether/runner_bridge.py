@@ -1040,6 +1040,7 @@ def _resolve_presenter(
                 command_width=default_presenter._formatter.command_width,
                 verbosity=override,
                 show_context_usage=default_presenter._formatter.show_context_usage,
+                status_head=default_presenter._formatter.status_head,
             )
             return TelegramPresenter(
                 formatter=formatter,
@@ -1949,9 +1950,21 @@ def _log_runner_event(evt: UntetherEvent) -> None:
 
 
 def _strip_resume_lines(text: str, *, is_resume_line: Callable[[str], bool]) -> str:
-    prompt = "\n".join(
-        line for line in text.splitlines() if not is_resume_line(line)
-    ).strip()
+    lines = text.splitlines()
+    filtered: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if is_resume_line(line):
+            if filtered and filtered[-1].strip().startswith("```"):
+                filtered.pop()
+            if i + 1 < len(lines) and lines[i + 1].strip() == "```":
+                i += 1
+            i += 1
+            continue
+        filtered.append(line)
+        i += 1
+    prompt = "\n".join(filtered).strip()
     return prompt or "continue"
 
 

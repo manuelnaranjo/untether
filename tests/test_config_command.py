@@ -4716,6 +4716,115 @@ class TestResumeLineToasts:
 
 
 # ---------------------------------------------------------------------------
+# Status head
+# ---------------------------------------------------------------------------
+
+
+class TestStatusHead:
+    @pytest.mark.anyio
+    async def test_status_head_page_renders(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sh",
+            text="config:sh",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "Status head" in msg.text
+        data = _buttons_data(msg)
+        assert "config:sh:on" in data or "config:sh:off" in data
+        assert "config:sh:clr" in data
+
+    @pytest.mark.anyio
+    async def test_status_head_set_on(self, tmp_path):
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sh:on",
+            text="config:sh:on",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "settings" in msg.text.lower()
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        override = await prefs.get_engine_override(123, "claude")
+        assert override is not None
+        assert override.status_head is True
+
+    @pytest.mark.anyio
+    async def test_status_head_set_off(self, tmp_path):
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sh:off",
+            text="config:sh:off",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        override = await prefs.get_engine_override(123, "claude")
+        assert override is not None
+        assert override.status_head is False
+
+    @pytest.mark.anyio
+    async def test_status_head_clear(self, tmp_path):
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+        from untether.telegram.engine_overrides import EngineOverrides
+
+        state_path = tmp_path / "state.json"
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        await prefs.set_engine_override(
+            123, "claude", EngineOverrides(status_head=True)
+        )
+
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sh:clr",
+            text="config:sh:clr",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        override = await prefs.get_engine_override(123, "claude")
+        assert override is None or override.status_head is None
+
+    @pytest.mark.anyio
+    async def test_status_head_shown_on_home(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(config_path=state_path, default_engine="claude")
+        await cmd.handle(ctx)
+        msg = _last_send_msg(ctx)
+        assert "Status head:" in msg.text
+        assert "config:sh" in _buttons_data(msg)
+
+
+class TestStatusHeadToasts:
+    def test_toast_sh_on(self):
+        assert ConfigCommand.early_answer_toast("sh:on") == "Status head: on"
+
+    def test_toast_sh_off(self):
+        assert ConfigCommand.early_answer_toast("sh:off") == "Status head: off"
+
+    def test_toast_sh_clr(self):
+        assert ConfigCommand.early_answer_toast("sh:clr") == "Status head: cleared"
+
+    def test_toast_sh_nav(self):
+        assert ConfigCommand.early_answer_toast("sh") is None
+
+
+# ---------------------------------------------------------------------------
 # Budget settings (#129)
 # ---------------------------------------------------------------------------
 

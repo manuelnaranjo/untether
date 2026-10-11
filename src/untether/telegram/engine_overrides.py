@@ -91,6 +91,7 @@ class EngineOverrides(msgspec.Struct, forbid_unknown_fields=False):
     show_api_cost: bool | None = None
     show_subscription_usage: bool | None = None
     show_resume_line: bool | None = None
+    status_head: bool | None = None
     budget_enabled: bool | None = None
     budget_auto_cancel: bool | None = None
     loop_enabled: bool | None = None
@@ -167,6 +168,7 @@ def normalize_overrides(overrides: EngineOverrides | None) -> EngineOverrides | 
     show_api_cost = overrides.show_api_cost
     show_subscription_usage = overrides.show_subscription_usage
     show_resume_line = overrides.show_resume_line
+    status_head = overrides.status_head
     budget_enabled = overrides.budget_enabled
     budget_auto_cancel = overrides.budget_auto_cancel
     loop_enabled = overrides.loop_enabled
@@ -179,6 +181,7 @@ def normalize_overrides(overrides: EngineOverrides | None) -> EngineOverrides | 
         and show_api_cost is None
         and show_subscription_usage is None
         and show_resume_line is None
+        and status_head is None
         and budget_enabled is None
         and budget_auto_cancel is None
         and loop_enabled is None
@@ -193,6 +196,7 @@ def normalize_overrides(overrides: EngineOverrides | None) -> EngineOverrides | 
         show_api_cost=show_api_cost,
         show_subscription_usage=show_subscription_usage,
         show_resume_line=show_resume_line,
+        status_head=status_head,
         budget_enabled=budget_enabled,
         budget_auto_cancel=budget_auto_cancel,
         loop_enabled=loop_enabled,
@@ -247,6 +251,11 @@ def merge_overrides(
         show_resume_line = topic.show_resume_line
     elif chat is not None:
         show_resume_line = chat.show_resume_line
+    status_head = None
+    if topic is not None and topic.status_head is not None:
+        status_head = topic.status_head
+    elif chat is not None:
+        status_head = chat.status_head
     budget_enabled = None
     if topic is not None and topic.budget_enabled is not None:
         budget_enabled = topic.budget_enabled
@@ -272,6 +281,7 @@ def merge_overrides(
             show_api_cost=show_api_cost,
             show_subscription_usage=show_subscription_usage,
             show_resume_line=show_resume_line,
+            status_head=status_head,
             budget_enabled=budget_enabled,
             budget_auto_cancel=budget_auto_cancel,
             loop_enabled=loop_enabled,

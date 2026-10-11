@@ -560,3 +560,100 @@ def test_load_progress_settings_returns_defaults_on_error(monkeypatch) -> None:
     )
     cfg = runner_bridge._load_progress_settings()
     assert isinstance(cfg, ProgressSettings)
+
+
+def test_status_head_and_highlighted_resume_rendering() -> None:
+    """Verify that dir, model, and effort line + resume code block render before AI response when status_head=True."""
+    from untether.model import ResumeToken, StartedEvent
+    from untether.progress import ProgressTracker
+    from untether.runner_bridge import _strip_resume_lines
+    from untether.telegram.render import prepare_telegram
+
+    tracker = ProgressTracker(engine="antigravity")
+    evt = StartedEvent(
+        engine="antigravity",
+        resume=ResumeToken(engine="antigravity", value="conv-456"),
+        meta={"model": "gemini-2.5-pro", "effort": "high"},
+    )
+    tracker.note_event(evt)
+    state = tracker.snapshot(
+        resume_formatter=lambda t: f"`agy --conversation {t.value}`",
+        context_line="dir: untether @master",
+        meta_formatter=format_meta_line,
+    )
+    formatter = MarkdownFormatter(status_head=True)
+    parts = formatter.render_final_parts(
+        state, elapsed_s=5.0, status="done", answer="Here is the solution."
+    )
+    assert parts.status_head is not None
+    assert parts.footer is None
+
+    text, entities = prepare_telegram(parts)
+
+    # 1. Header is first
+    assert text.startswith("done · antigravity · 5s")
+    # 2. Status line and resume block appear before the AI answer
+    dir_idx = text.index("🏷 dir: untether @master | gemini-2.5-pro · high")
+    resume_idx = text.index("agy --conversation conv-456")
+    answer_idx = text.index("Here is the solution.")
+    assert dir_idx < resume_idx < answer_idx
+
+    # 3. Resume command is in a 'pre' entity with 'bash' language for 1-tap copying
+    pre_entities = [e for e in entities if e.get("type") == "pre"]
+    assert any(
+        e.get("language") == "bash"
+        and text.encode("utf-16-le")[2 * e["offset"] : 2 * (e["offset"] + e["length"])]
+        .decode("utf-16-le")
+        .strip()
+        == "agy --conversation conv-456"
+        for e in pre_entities
+    )
+
+    # 4. Quoting the message strips the resume code block cleanly
+    cleaned = _strip_resume_lines(
+        text, is_resume_line=lambda line: "agy --conversation" in line
+    )
+    assert "agy --conversation" not in cleaned
+    assert "```" not in cleaned
+    assert "Here is the solution." in cleaned
+
+
+def test_status_head_disabled_uses_footer() -> None:
+    """When status_head=False, metadata and resume remain in footer."""
+    from untether.model import ResumeToken, StartedEvent
+    from untether.progress import ProgressTracker
+
+    tracker = ProgressTracker(engine="claude")
+    evt = StartedEvent(
+        engine="claude",
+        resume=ResumeToken(engine="claude", value="sess-1"),
+        meta={"model": "sonnet"},
+    )
+    tracker.note_event(evt)
+    state = tracker.snapshot(
+        resume_formatter=lambda t: f"claude --resume {t.value}",
+        context_line="dir: untether @dev",
+        meta_formatter=format_meta_line,
+    )
+    formatter = MarkdownFormatter(status_head=False)
+    parts = formatter.render_final_parts(
+        state, elapsed_s=5.0, status="done", answer="Done."
+    )
+    assert parts.status_head is None
+    assert parts.footer is not None
+    assert "🏷 dir: untether @dev | sonnet" in parts.footer
+    assert "↩️ claude --resume sess-1" in parts.footer
+
+
+def test_markdown_formatter_refresh_from_status_head() -> None:
+    """ProgressSettings hot reload updates formatter's status_head."""
+    from types import SimpleNamespace
+
+    formatter = MarkdownFormatter(status_head=False)
+    assert formatter.status_head is False
+
+    formatter.refresh_from(SimpleNamespace(status_head=True))
+    assert formatter.status_head is True
+
+    formatter.refresh_from(SimpleNamespace(status_head=False))
+    assert formatter.status_head is False
