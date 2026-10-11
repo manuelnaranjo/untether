@@ -16,6 +16,7 @@ class EngineRunOptions:
     show_api_cost: bool | None = None
     show_subscription_usage: bool | None = None
     show_resume_line: bool | None = None
+    status_head: bool | None = None
     budget_enabled: bool | None = None
     budget_auto_cancel: bool | None = None
     # #289 — per-chat /loop and ScheduleWakeup observation toggle.  ``None``
