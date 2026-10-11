@@ -4,6 +4,8 @@ from .agent import _handle_agent_command as handle_agent_command
 from .dispatch import _dispatch_callback as dispatch_callback
 from .dispatch import _dispatch_command as dispatch_command
 from .dispatch import _parse_callback_data as parse_callback_data
+from .effort import _handle_callback_effort as handle_callback_effort
+from .effort import _handle_effort_command as handle_effort_command
 from .executor import _run_engine as run_engine
 from .executor import _should_show_resume_line as should_show_resume_line
 from .file_transfer import _handle_file_command as handle_file_command
@@ -13,6 +15,7 @@ from .listen import _handle_listen_command as handle_listen_command
 from .media import _handle_media_group as handle_media_group
 from .menu import _reserved_commands as get_reserved_commands
 from .menu import _set_command_menu as set_command_menu
+from .model import _handle_callback_model as handle_callback_model
 from .model import _handle_model_command as handle_model_command
 from .parse import _parse_slash_command as parse_slash_command
 from .reasoning import _handle_reasoning_command as handle_reasoning_command
@@ -31,9 +34,12 @@ __all__ = [
     "dispatch_command",
     "get_reserved_commands",
     "handle_agent_command",
+    "handle_callback_effort",
+    "handle_callback_model",
     "handle_chat_ctx_command",
     "handle_chat_new_command",
     "handle_ctx_command",
+    "handle_effort_command",
     "handle_file_command",
     "handle_file_put_default",
     "handle_listen_command",

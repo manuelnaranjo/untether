@@ -34,6 +34,7 @@ servers it doesn't manage (REVIEW-2 B2).
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import contextvars
 import json
@@ -4726,3 +4727,225 @@ BACKEND = EngineBackend(
     install_cmd="curl -fsSL https://antigravity.google/cli/install.sh | bash",
     resolve_cli_cmd=resolve_antigravity_cmd,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredModel:
+    model_id: str
+    effort_levels: tuple[str, ...] = ()
+    raw_ids: tuple[str, ...] = ()
+
+    @property
+    def supports_effort(self) -> bool:
+        return len(self.effort_levels) > 0
+
+
+def parse_and_group_antigravity_models(
+    lines: list[str],
+) -> list[DiscoveredModel]:
+    raw_ids: list[str] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("\t", 1)
+        m_id = parts[0].strip()
+        if m_id and m_id not in raw_ids:
+            raw_ids.append(m_id)
+
+    if not raw_ids:
+        return []
+
+    base_groups: dict[str, list[tuple[str | None, str]]] = {}
+    for r_id in raw_ids:
+        m = re.match(r"^(.*?)-(low|medium|high)$", r_id)
+        if m:
+            base = m.group(1)
+            eff = m.group(2)
+            base_groups.setdefault(base, []).append((eff, r_id))
+        else:
+            base_groups.setdefault(r_id, []).append((None, r_id))
+
+    effort_priority = ("low", "medium", "high")
+    models: list[DiscoveredModel] = []
+    for base, entries in base_groups.items():
+        efforts = [e for e, _ in entries if e is not None]
+        if len(efforts) > 1:
+            sorted_efforts = tuple(e for e in effort_priority if e in efforts)
+            models.append(
+                DiscoveredModel(
+                    model_id=base,
+                    effort_levels=sorted_efforts,
+                    raw_ids=tuple(r for _, r in entries),
+                )
+            )
+        else:
+            for _, r_id in entries:
+                models.append(
+                    DiscoveredModel(
+                        model_id=r_id,
+                        effort_levels=(),
+                        raw_ids=(r_id, base) if base != r_id else (r_id,),
+                    )
+                )
+
+    return models
+
+
+_MODEL_CACHE_TTL = 300.0  # 5 minutes
+_models_cache: dict[str, tuple[float, list[DiscoveredModel]]] = {}
+_last_antigravity_cmd: str | None = None
+
+
+def get_last_antigravity_cmd() -> str | None:
+    return _last_antigravity_cmd
+
+
+def set_last_antigravity_cmd(cmd: str | None) -> None:
+    global _last_antigravity_cmd
+    _last_antigravity_cmd = cmd
+
+
+def get_cached_models(engine: str = "antigravity") -> list[DiscoveredModel]:
+    cached = _models_cache.get(engine)
+    return cached[1] if cached is not None else []
+
+
+def set_cached_models(
+    models: list[DiscoveredModel],
+    engine: str = "antigravity",
+    timestamp: float | None = None,
+) -> None:
+    now = time.monotonic() if timestamp is None else timestamp
+    _models_cache[engine] = (now, models)
+
+
+def reset_model_cache() -> None:
+    global _models_cache
+    _models_cache.clear()
+
+
+def antigravity_model_supports_effort(
+    model: str | None,
+    *,
+    discovered_models: list[DiscoveredModel] | None = None,
+) -> bool:
+    if not model:
+        return True
+
+    m_str = str(model).strip()
+    models = (
+        discovered_models
+        if discovered_models is not None
+        else get_cached_models("antigravity")
+    )
+    if models:
+        match = re.match(r"^(.*?)-(low|medium|high)$", m_str)
+        base = match.group(1) if match else m_str
+        for m in models:
+            m_id = m.model_id.lower()
+            raw_ids = [r.lower() for r in m.raw_ids]
+            m_match = re.match(r"^(.*?)-(low|medium|high)$", m_id)
+            m_base = m_match.group(1).lower() if m_match else m_id
+            if (
+                m_id == m_str.lower()
+                or m_id == base.lower()
+                or m_base == base.lower()
+                or m_base == m_str.lower()
+                or m_str.lower() in raw_ids
+                or base.lower() in raw_ids
+            ):
+                return m.supports_effort
+
+    m_lower = m_str.lower()
+    if "gpt-oss" in m_lower:
+        return False
+    if (
+        "claude-sonnet-4" in m_lower
+        or "claude-opus-4" in m_lower
+        or "claude-haiku" in m_lower
+    ):
+        return False
+    if m_lower.startswith("gemini-"):
+        return True
+    if "claude-opus-5-5" in m_lower or "claude-sonnet-5-5" in m_lower:
+        return True
+    return bool(re.search(r"-(low|medium|high)$", m_lower))
+
+
+async def fetch_antigravity_models(
+    *,
+    antigravity_cmd: str | None = None,
+    timeout_seconds: float = 5.0,
+) -> list[DiscoveredModel]:
+    """Fetch available models from Antigravity CLI by running `agy models`."""
+    if antigravity_cmd:
+        set_last_antigravity_cmd(antigravity_cmd)
+
+    cmd = antigravity_cmd or _last_antigravity_cmd or default_antigravity_cmd()
+    expanded = Path(cmd).expanduser()
+    if not shutil.which(str(expanded)) and not expanded.exists():
+        return []
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(expanded),
+            "models",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except Exception:  # noqa: BLE001
+        return []
+
+    if proc.returncode != 0:
+        return []
+
+    lines = stdout.decode("utf-8", errors="replace").splitlines()
+    return parse_and_group_antigravity_models(lines)
+
+
+async def fetch_available_models(
+    engine: str,
+    *,
+    antigravity_cmd: str | None = None,
+) -> list[DiscoveredModel]:
+    if engine != "antigravity":
+        return []
+    if antigravity_cmd:
+        set_last_antigravity_cmd(antigravity_cmd)
+    now = time.monotonic()
+    cached = _models_cache.get(engine)
+    if cached is not None and now - cached[0] < _MODEL_CACHE_TTL:
+        return cached[1]
+    models = await fetch_antigravity_models(antigravity_cmd=antigravity_cmd)
+    _models_cache[engine] = (now, models)
+    return models
+
+
+async def get_model_effort_levels(
+    engine: str,
+    model_id: str | None,
+    *,
+    antigravity_cmd: str | None = None,
+) -> tuple[str, ...]:
+    if engine != "antigravity" or not model_id:
+        return ()
+    models = await fetch_available_models(engine, antigravity_cmd=antigravity_cmd)
+    match = re.match(r"^(.*?)-(low|medium|high)$", model_id)
+    base_id = match.group(1) if match else model_id
+    for m in models:
+        m_match = re.match(r"^(.*?)-(low|medium|high)$", m.model_id)
+        m_base = m_match.group(1) if m_match else m.model_id
+        if (
+            m.model_id == model_id
+            or m.model_id == base_id
+            or m_base == base_id
+            or model_id in m.raw_ids
+            or base_id in m.raw_ids
+        ):
+            return m.effort_levels
+    if antigravity_model_supports_effort(model_id, discovered_models=models):
+        return ("low", "medium", "high")
+    return ()
