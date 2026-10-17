@@ -429,7 +429,17 @@ def _load_progress_settings():
         if result is None:
             return ProgressSettings()
         settings, _ = result
-        return settings.progress
+        progress = settings.progress
+        updates: dict[str, Any] = {}
+        if hasattr(settings, "transports") and hasattr(settings.transports, "telegram"):
+            tg = settings.transports.telegram
+            if getattr(tg, "status_head", False) and not progress.status_head:
+                updates["status_head"] = True
+            if not getattr(tg, "show_status_line", True) and progress.show_status_line:
+                updates["show_status_line"] = False
+        if updates:
+            progress = progress.model_copy(update=updates)
+        return progress
     except Exception:  # noqa: BLE001
         logger.warning("progress_settings.load_failed", exc_info=True)
         return ProgressSettings()
@@ -1014,38 +1024,57 @@ def _apply_preamble(prompt: str, engine: str) -> str:
 def _resolve_presenter(
     default_presenter: Presenter, channel_id: ChannelId
 ) -> Presenter:
-    """Return a presenter with the effective verbosity for this channel.
+    """Return a presenter with the effective verbosity and display settings for this channel.
 
-    Checks for a per-chat /verbose override. If one exists and differs from
-    the default presenter's formatter, creates a new presenter with the
-    overridden verbosity. Otherwise returns the default.
+    Checks for a per-chat /verbose override as well as per-chat/run_options
+    status_head and show_status_line. If any differ from the default presenter's
+    formatter, creates a new presenter. Otherwise returns the default.
     """
     try:
         from .markdown import MarkdownFormatter
+        from .runners.run_options import get_run_options
         from .telegram.bridge import TelegramPresenter
         from .telegram.commands.verbose import get_verbosity_override
 
         override = get_verbosity_override(channel_id)
-        if override is None:
+        run_opts = get_run_options()
+        if not isinstance(default_presenter, TelegramPresenter):
             return default_presenter
-        # Only create a new presenter if the override differs
+
+        effective_verbosity = (
+            override if override is not None else default_presenter._formatter.verbosity
+        )
+        effective_status_head = (
+            run_opts.status_head
+            if run_opts is not None and run_opts.status_head is not None
+            else default_presenter._formatter.status_head
+        )
+        effective_show_status_line = (
+            run_opts.show_status_line
+            if run_opts is not None and run_opts.show_status_line is not None
+            else default_presenter._formatter.show_status_line
+        )
+
         if (
-            isinstance(default_presenter, TelegramPresenter)
-            and default_presenter._formatter.verbosity == override
+            default_presenter._formatter.verbosity == effective_verbosity
+            and default_presenter._formatter.status_head == effective_status_head
+            and default_presenter._formatter.show_status_line
+            == effective_show_status_line
         ):
             return default_presenter
-        if isinstance(default_presenter, TelegramPresenter):
-            formatter = MarkdownFormatter(
-                max_actions=default_presenter._formatter.max_actions,
-                command_width=default_presenter._formatter.command_width,
-                verbosity=override,
-                show_context_usage=default_presenter._formatter.show_context_usage,
-                status_head=default_presenter._formatter.status_head,
-            )
-            return TelegramPresenter(
-                formatter=formatter,
-                message_overflow=default_presenter._message_overflow,
-            )
+
+        formatter = MarkdownFormatter(
+            max_actions=default_presenter._formatter.max_actions,
+            command_width=default_presenter._formatter.command_width,
+            verbosity=effective_verbosity,
+            show_context_usage=default_presenter._formatter.show_context_usage,
+            status_head=effective_status_head,
+            show_status_line=effective_show_status_line,
+        )
+        return TelegramPresenter(
+            formatter=formatter,
+            message_overflow=default_presenter._message_overflow,
+        )
     except Exception:  # noqa: BLE001
         logger.debug("resolve_presenter.failed", exc_info=True)
     return default_presenter
@@ -1056,8 +1085,8 @@ def _refresh_progress_settings(
 ) -> Any:
     """Push the current ``[progress]`` settings into ``presenter`` (#269).
 
-    ``override`` is a per-chat ``/verbose`` presenter built at run start: it
-    takes the refreshed values too, except the verbosity it overrides.
+    ``override`` is a per-chat presenter built at run start: it
+    takes the refreshed values too, except the fields it overrides.
     Returns the settings snapshot.
     """
     from .telegram.bridge import TelegramPresenter
@@ -1077,6 +1106,8 @@ def _refresh_progress_settings(
     ):
         override._formatter.max_actions = presenter._formatter.max_actions
         override._formatter.show_context_usage = presenter._formatter.show_context_usage
+        override._formatter.status_head = presenter._formatter.status_head
+        override._formatter.show_status_line = presenter._formatter.show_status_line
     return progress_cfg
 
 

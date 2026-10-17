@@ -685,6 +685,7 @@ class MarkdownFormatter:
         verbosity: Literal["compact", "verbose"] = "compact",
         show_context_usage: bool = True,
         status_head: bool = False,
+        show_status_line: bool = True,
     ) -> None:
         self.max_actions = max(0, int(max_actions))
         self.command_width = command_width
@@ -693,6 +694,7 @@ class MarkdownFormatter:
         # per run by ``refresh_from`` (hot reload).
         self.show_context_usage = show_context_usage
         self.status_head = status_head
+        self.show_status_line = show_status_line
 
     def refresh_from(self, progress: Any) -> None:
         """Update mutable formatting knobs from a ``ProgressSettings`` snapshot (#269).
@@ -716,6 +718,9 @@ class MarkdownFormatter:
         status_head = getattr(progress, "status_head", None)
         if isinstance(status_head, bool):
             self.status_head = status_head
+        show_status_line = getattr(progress, "show_status_line", None)
+        if isinstance(show_status_line, bool):
+            self.show_status_line = show_status_line
 
     def _context_pct(self, state: ProgressState) -> int | None:
         return state.context_pct if self.show_context_usage else None
@@ -779,10 +784,11 @@ class MarkdownFormatter:
     def _format_status_head(self, state: ProgressState) -> str | None:
         blocks: list[str] = []
         info_parts: list[str] = []
-        if state.context_line:
-            info_parts.append(state.context_line)
-        if state.meta_line:
-            info_parts.append(state.meta_line)
+        if self.show_status_line:
+            if state.context_line:
+                info_parts.append(state.context_line)
+            if state.meta_line:
+                info_parts.append(state.meta_line)
         if info_parts:
             blocks.append("\N{LABEL} " + " | ".join(info_parts))
         if state.resume_line:
@@ -807,10 +813,11 @@ class MarkdownFormatter:
         lines: list[str] = []
         # Combine context + meta into a single 🏷 info line with pipe separators
         info_parts: list[str] = []
-        if state.context_line:
-            info_parts.append(state.context_line)
-        if state.meta_line:
-            info_parts.append(state.meta_line)
+        if self.show_status_line:
+            if state.context_line:
+                info_parts.append(state.context_line)
+            if state.meta_line:
+                info_parts.append(state.meta_line)
         if info_parts:
             lines.append("\N{LABEL} " + " | ".join(info_parts))
         if state.resume_line:

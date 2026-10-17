@@ -4824,6 +4824,110 @@ class TestStatusHeadToasts:
         assert ConfigCommand.early_answer_toast("sh") is None
 
 
+class TestStatusLine:
+    @pytest.mark.anyio
+    async def test_status_line_page_renders(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sl",
+            text="config:sl",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "Status line" in msg.text
+        data = _buttons_data(msg)
+        assert "config:sl:on" in data or "config:sl:off" in data
+        assert "config:sl:clr" in data
+
+    @pytest.mark.anyio
+    async def test_status_line_set_on(self, tmp_path):
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sl:on",
+            text="config:sl:on",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        msg = _last_edit_msg(ctx)
+        assert "settings" in msg.text.lower()
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        override = await prefs.get_engine_override(123, "claude")
+        assert override is not None
+        assert override.show_status_line is True
+
+    @pytest.mark.anyio
+    async def test_status_line_set_off(self, tmp_path):
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sl:off",
+            text="config:sl:off",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        override = await prefs.get_engine_override(123, "claude")
+        assert override is not None
+        assert override.show_status_line is False
+
+    @pytest.mark.anyio
+    async def test_status_line_clear(self, tmp_path):
+        from untether.telegram.chat_prefs import ChatPrefsStore, resolve_prefs_path
+        from untether.telegram.engine_overrides import EngineOverrides
+
+        state_path = tmp_path / "state.json"
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        await prefs.set_engine_override(
+            123, "claude", EngineOverrides(show_status_line=True)
+        )
+
+        cmd = ConfigCommand()
+        ctx = _make_ctx(
+            args_text="sl:clr",
+            text="config:sl:clr",
+            config_path=state_path,
+            default_engine="claude",
+        )
+        await cmd.handle(ctx)
+        prefs = ChatPrefsStore(resolve_prefs_path(state_path))
+        override = await prefs.get_engine_override(123, "claude")
+        assert override is None or override.show_status_line is None
+
+    @pytest.mark.anyio
+    async def test_status_line_shown_on_home(self, tmp_path):
+        state_path = tmp_path / "state.json"
+        cmd = ConfigCommand()
+        ctx = _make_ctx(config_path=state_path, default_engine="claude")
+        await cmd.handle(ctx)
+        msg = _last_send_msg(ctx)
+        assert "Status line:" in msg.text
+        assert "config:sl" in _buttons_data(msg)
+
+
+class TestStatusLineToasts:
+    def test_toast_sl_on(self):
+        assert ConfigCommand.early_answer_toast("sl:on") == "Status line: on"
+
+    def test_toast_sl_off(self):
+        assert ConfigCommand.early_answer_toast("sl:off") == "Status line: off"
+
+    def test_toast_sl_clr(self):
+        assert ConfigCommand.early_answer_toast("sl:clr") == "Status line: cleared"
+
+    def test_toast_sl_nav(self):
+        assert ConfigCommand.early_answer_toast("sl") is None
+
+
 # ---------------------------------------------------------------------------
 # Budget settings (#129)
 # ---------------------------------------------------------------------------

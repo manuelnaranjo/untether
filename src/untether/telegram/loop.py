@@ -212,6 +212,8 @@ async def _resolve_engine_run_options(
             show_api_cost=merged.show_api_cost,
             show_subscription_usage=merged.show_subscription_usage,
             show_resume_line=merged.show_resume_line,
+            status_head=merged.status_head,
+            show_status_line=merged.show_status_line,
             budget_enabled=merged.budget_enabled,
             budget_auto_cancel=merged.budget_auto_cancel,
             loop_enabled=merged.loop_enabled,

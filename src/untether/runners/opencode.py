@@ -13,6 +13,7 @@ Session IDs use the format: ses_XXXX (e.g., ses_494719016ffe85dkDMj0FPRbHK)
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import os
@@ -36,6 +37,7 @@ from ..model import (
     ActionEvent,
     ActionKind,
     CompletedEvent,
+    DiscoveredModel,
     EngineId,
     ResumeToken,
     StartedEvent,
@@ -567,6 +569,9 @@ class OpenCodeRunner(ResumeTokenMixin, JsonlSubprocessRunner):
     def command(self) -> str:
         return self.opencode_cmd
 
+    async def fetch_available_models(self) -> list[DiscoveredModel]:
+        return await fetch_opencode_models(self.command())
+
     def build_args(
         self,
         prompt: str,
@@ -836,6 +841,52 @@ def build_runner(config: EngineConfig, config_path: Path) -> Runner:
         model=model,
         session_title=title,
     )
+
+
+def parse_opencode_models(output: str) -> list[DiscoveredModel]:
+    models: list[DiscoveredModel] = []
+    seen: set[str] = set()
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        m_id = parts[0].strip()
+        if m_id and "/" in m_id and m_id not in seen:
+            seen.add(m_id)
+            short_id = m_id.split("/", 1)[1]
+            raw_ids = (m_id, short_id) if short_id != m_id else (m_id,)
+            models.append(
+                DiscoveredModel(
+                    model_id=m_id,
+                    effort_levels=(),
+                    raw_ids=raw_ids,
+                )
+            )
+    return models
+
+
+async def fetch_opencode_models(
+    opencode_cmd: str = "opencode",
+    timeout_seconds: float = 5.0,
+) -> list[DiscoveredModel]:
+    expanded = Path(opencode_cmd).expanduser()
+    if not shutil.which(str(expanded)) and not expanded.exists():
+        return []
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(expanded),
+            "models",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except Exception:  # noqa: BLE001
+        return []
+    if proc.returncode != 0:
+        return []
+    return parse_opencode_models(stdout.decode("utf-8", errors="replace"))
 
 
 BACKEND = EngineBackend(

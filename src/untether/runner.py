@@ -24,6 +24,7 @@ from .model import (
     Action,
     ActionEvent,
     CompletedEvent,
+    DiscoveredModel,
     EngineId,
     ResumeToken,
     StartedEvent,
@@ -560,6 +561,9 @@ def _session_label(
 
 class BaseRunner(SessionLockMixin):
     engine: EngineId
+
+    async def fetch_available_models(self) -> list[DiscoveredModel]:
+        return []
 
     def run(
         self, prompt: str, resume: ResumeToken | None
@@ -2129,6 +2133,8 @@ class Runner(Protocol):
     def format_resume(self, token: ResumeToken) -> str: ...
 
     def extract_resume(self, text: str | None) -> ResumeToken | None: ...
+
+    async def fetch_available_models(self) -> list[DiscoveredModel]: ...
 
     def run(
         self,

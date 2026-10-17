@@ -129,6 +129,9 @@ class MockRunner(SessionLockMixin, ResumeTokenMixin, Runner):
                 answer=self._answer,
             )
 
+    async def fetch_available_models(self) -> list[Any]:
+        return []
+
 
 class ScriptRunner(MockRunner):
     def __init__(
