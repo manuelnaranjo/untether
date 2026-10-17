@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import re
+import shutil
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +24,7 @@ from ..model import (
     ActionLevel,
     ActionPhase,
     CompletedEvent,
+    DiscoveredModel,
     EngineId,
     ResumeToken,
     StartedEvent,
@@ -541,13 +544,15 @@ class PiRunner(ResumeTokenMixin, JsonlSubprocessRunner):
     def __init__(
         self,
         *,
-        extra_args: list[str],
-        model: str | None,
-        provider: str | None,
+        extra_args: list[str] | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        pi_cmd: str = "pi",
     ) -> None:
-        self.extra_args = extra_args
+        self.extra_args = extra_args or []
         self.model = model
         self.provider = provider
+        self.pi_cmd = pi_cmd
 
     def format_resume(self, token: ResumeToken) -> str:
         if token.engine != ENGINE:
@@ -576,7 +581,10 @@ class PiRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         return ResumeToken(engine=self.engine, value=found)
 
     def command(self) -> str:
-        return "pi"
+        return self.pi_cmd
+
+    async def fetch_available_models(self) -> list[DiscoveredModel]:
+        return await fetch_pi_models(self.command())
 
     def check_resume_value(self, value: Any) -> str:
         return check_pi_resume(value)
@@ -864,6 +872,50 @@ def build_runner(config: EngineConfig, config_path: Path) -> Runner:
         model=model,
         provider=provider,
     )
+
+
+def parse_pi_models(output: str) -> list[DiscoveredModel]:
+    models: list[DiscoveredModel] = []
+    seen: set[str] = set()
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        m_id = parts[0].strip()
+        if m_id and m_id not in seen:
+            seen.add(m_id)
+            models.append(
+                DiscoveredModel(
+                    model_id=m_id,
+                    effort_levels=(),
+                    raw_ids=(m_id,),
+                )
+            )
+    return models
+
+
+async def fetch_pi_models(
+    pi_cmd: str = "pi",
+    timeout_seconds: float = 5.0,
+) -> list[DiscoveredModel]:
+    expanded = Path(pi_cmd).expanduser()
+    if not shutil.which(str(expanded)) and not expanded.exists():
+        return []
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(expanded),
+            "--list-models",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except Exception:  # noqa: BLE001
+        return []
+    if proc.returncode != 0:
+        return []
+    return parse_pi_models(stdout.decode("utf-8", errors="replace"))
 
 
 BACKEND = EngineBackend(
