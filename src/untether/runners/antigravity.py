@@ -64,6 +64,7 @@ from ..model import (
     ActionEvent,
     ActionKind,
     CompletedEvent,
+    DiscoveredModel,
     EngineId,
     ResumeToken,
     UntetherEvent,
@@ -1607,6 +1608,9 @@ class AntigravityRunner(ResumeTokenMixin, JsonlSubprocessRunner):
 
     def command(self) -> str:
         return self.antigravity_cmd
+
+    async def fetch_available_models(self) -> list[DiscoveredModel]:
+        return await fetch_antigravity_models(antigravity_cmd=self.command())
 
     def pipes_error_message(self) -> str:
         return "agy failed to open subprocess pipes"
@@ -4729,17 +4733,6 @@ BACKEND = EngineBackend(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class DiscoveredModel:
-    model_id: str
-    effort_levels: tuple[str, ...] = ()
-    raw_ids: tuple[str, ...] = ()
-
-    @property
-    def supports_effort(self) -> bool:
-        return len(self.effort_levels) > 0
-
-
 def parse_and_group_antigravity_models(
     lines: list[str],
 ) -> list[DiscoveredModel]:
@@ -4792,8 +4785,53 @@ def parse_and_group_antigravity_models(
     return models
 
 
-_MODEL_CACHE_TTL = 300.0  # 5 minutes
-_models_cache: dict[str, tuple[float, list[DiscoveredModel]]] = {}
+def get_cached_models(engine: str = "antigravity") -> list[DiscoveredModel]:
+    from .discovery import get_cached_models as _get_cached_models
+
+    return _get_cached_models(engine)
+
+
+def set_cached_models(
+    models: list[DiscoveredModel],
+    engine: str = "antigravity",
+    timestamp: float | None = None,
+) -> None:
+    from .discovery import set_cached_models as _set_cached_models
+
+    _set_cached_models(models, engine=engine, timestamp=timestamp)
+
+
+def reset_model_cache(engine: str | None = None) -> None:
+    from .discovery import reset_model_cache as _reset_model_cache
+
+    _reset_model_cache(engine)
+
+
+async def fetch_available_models(
+    engine: str,
+    *,
+    antigravity_cmd: str | None = None,
+) -> list[DiscoveredModel]:
+    from .discovery import fetch_available_models as _fetch_available_models
+
+    if antigravity_cmd:
+        set_last_antigravity_cmd(antigravity_cmd)
+    return await _fetch_available_models(engine, antigravity_cmd=antigravity_cmd)
+
+
+async def get_model_effort_levels(
+    engine: str,
+    model_id: str | None,
+    *,
+    antigravity_cmd: str | None = None,
+) -> tuple[str, ...]:
+    from .discovery import get_model_effort_levels as _get_model_effort_levels
+
+    return await _get_model_effort_levels(
+        engine, model_id, antigravity_cmd=antigravity_cmd
+    )
+
+
 _last_antigravity_cmd: str | None = None
 
 
@@ -4804,25 +4842,6 @@ def get_last_antigravity_cmd() -> str | None:
 def set_last_antigravity_cmd(cmd: str | None) -> None:
     global _last_antigravity_cmd
     _last_antigravity_cmd = cmd
-
-
-def get_cached_models(engine: str = "antigravity") -> list[DiscoveredModel]:
-    cached = _models_cache.get(engine)
-    return cached[1] if cached is not None else []
-
-
-def set_cached_models(
-    models: list[DiscoveredModel],
-    engine: str = "antigravity",
-    timestamp: float | None = None,
-) -> None:
-    now = time.monotonic() if timestamp is None else timestamp
-    _models_cache[engine] = (now, models)
-
-
-def reset_model_cache() -> None:
-    global _models_cache
-    _models_cache.clear()
 
 
 def antigravity_model_supports_effort(
@@ -4904,48 +4923,3 @@ async def fetch_antigravity_models(
 
     lines = stdout.decode("utf-8", errors="replace").splitlines()
     return parse_and_group_antigravity_models(lines)
-
-
-async def fetch_available_models(
-    engine: str,
-    *,
-    antigravity_cmd: str | None = None,
-) -> list[DiscoveredModel]:
-    if engine != "antigravity":
-        return []
-    if antigravity_cmd:
-        set_last_antigravity_cmd(antigravity_cmd)
-    now = time.monotonic()
-    cached = _models_cache.get(engine)
-    if cached is not None and now - cached[0] < _MODEL_CACHE_TTL:
-        return cached[1]
-    models = await fetch_antigravity_models(antigravity_cmd=antigravity_cmd)
-    _models_cache[engine] = (now, models)
-    return models
-
-
-async def get_model_effort_levels(
-    engine: str,
-    model_id: str | None,
-    *,
-    antigravity_cmd: str | None = None,
-) -> tuple[str, ...]:
-    if engine != "antigravity" or not model_id:
-        return ()
-    models = await fetch_available_models(engine, antigravity_cmd=antigravity_cmd)
-    match = re.match(r"^(.*?)-(low|medium|high)$", model_id)
-    base_id = match.group(1) if match else model_id
-    for m in models:
-        m_match = re.match(r"^(.*?)-(low|medium|high)$", m.model_id)
-        m_base = m_match.group(1) if m_match else m.model_id
-        if (
-            m.model_id == model_id
-            or m.model_id == base_id
-            or m_base == base_id
-            or model_id in m.raw_ids
-            or base_id in m.raw_ids
-        ):
-            return m.effort_levels
-    if antigravity_model_supports_effort(model_id, discovered_models=models):
-        return ("low", "medium", "high")
-    return ()

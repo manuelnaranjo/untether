@@ -209,6 +209,7 @@ class TelegramTransportSettings(BaseModel):
     session_mode: Literal["stateless", "chat"] = "stateless"
     show_resume_line: bool = True
     status_head: bool = False
+    show_status_line: bool = True
     # #775: what a message sent during a live Claude run does by default —
     # "queue" (wait for the turn to end) or "steer" (fold it into the running
     # turn). Per-chat / per-topic overrides via /config, /steer and /queue.
@@ -765,6 +766,7 @@ class ProgressSettings(BaseModel):
     # progress / final / turn header line. Display-only kill switch.
     show_context_usage: bool = True
     status_head: bool = False
+    show_status_line: bool = True
 
 
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")

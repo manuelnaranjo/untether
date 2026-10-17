@@ -23,6 +23,7 @@ from .model import (
     model_selector_state_machine,
     resolve_antigravity_cmd,
     resolve_antigravity_conversation_id,
+    resolve_engine_runner,
 )
 from .overrides import (
     apply_engine_override,
@@ -193,20 +194,22 @@ async def _handle_callback_effort(
                 text=f"{label} set to {level}",
             )
 
-        if is_from_model_selector and engine == "antigravity":
-            conversation_id = await resolve_antigravity_conversation_id(
-                query.chat_id,
-                tkey=tkey,
-                topic_store=topic_store,
-                chat_prefs=chat_prefs,
-            )
-            agy_cmd = resolve_antigravity_cmd(chat_prefs=chat_prefs)
-            agy_response = await execute_antigravity_model_switch(
-                model_to_set,
-                level,
-                conversation_id=conversation_id,
-                antigravity_cmd=agy_cmd,
-            )
+        if is_from_model_selector:
+            agy_response = None
+            if engine == "antigravity":
+                conversation_id = await resolve_antigravity_conversation_id(
+                    query.chat_id,
+                    tkey=tkey,
+                    topic_store=topic_store,
+                    chat_prefs=chat_prefs,
+                )
+                agy_cmd = resolve_antigravity_cmd(chat_prefs=chat_prefs)
+                agy_response = await execute_antigravity_model_switch(
+                    model_to_set,
+                    level,
+                    conversation_id=conversation_id,
+                    antigravity_cmd=agy_cmd,
+                )
             parts = [
                 f"engine: {engine}",
                 f"model: **{model_to_set}**",
@@ -292,20 +295,22 @@ async def _handle_callback_effort(
                 text=f"{label} override cleared",
             )
 
-        if is_from_model_selector and engine == "antigravity":
-            conversation_id = await resolve_antigravity_conversation_id(
-                query.chat_id,
-                tkey=tkey,
-                topic_store=topic_store,
-                chat_prefs=chat_prefs,
-            )
-            agy_cmd = resolve_antigravity_cmd(chat_prefs=chat_prefs)
-            agy_response = await execute_antigravity_model_switch(
-                model_to_set,
-                None,
-                conversation_id=conversation_id,
-                antigravity_cmd=agy_cmd,
-            )
+        if is_from_model_selector:
+            agy_response = None
+            if engine == "antigravity":
+                conversation_id = await resolve_antigravity_conversation_id(
+                    query.chat_id,
+                    tkey=tkey,
+                    topic_store=topic_store,
+                    chat_prefs=chat_prefs,
+                )
+                agy_cmd = resolve_antigravity_cmd(chat_prefs=chat_prefs)
+                agy_response = await execute_antigravity_model_switch(
+                    model_to_set,
+                    None,
+                    conversation_id=conversation_id,
+                    antigravity_cmd=agy_cmd,
+                )
             parts = [
                 f"engine: {engine}",
                 f"model: **{model_to_set}**",
@@ -345,11 +350,13 @@ async def _handle_callback_effort(
         field="model",
     )
     active_model = model_res.value
-    effort_levels = (
-        await get_model_effort_levels(engine, active_model)
-        if engine == "antigravity" and active_model
-        else allowed_reasoning_levels(engine)
+    runner = resolve_engine_runner(cfg, engine)
+    discovered_efforts = (
+        await get_model_effort_levels(engine, active_model, runner=runner)
+        if active_model
+        else ()
     )
+    effort_levels = discovered_efforts or allowed_reasoning_levels(engine)
 
     from ...transport import MessageRef, RenderedMessage
 

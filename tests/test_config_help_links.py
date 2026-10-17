@@ -247,6 +247,8 @@ def _expected() -> dict[tuple[str, str], frozenset[str]]:
         )
         table[("tg", engine)] = frozenset({_u("webhooks-and-cron")})
         table[("fu", engine)] = frozenset({_u("steer-follow-ups")})
+        table[("sh", engine)] = frozenset({_u("inline-settings")})
+        table[("sl", engine)] = frozenset({_u("inline-settings")})
         # Claude-only pages render an "only available for …" notice elsewhere.
         table[("aq", engine)] = _NONE
         table[("dp", engine)] = _NONE

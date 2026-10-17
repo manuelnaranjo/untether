@@ -10,20 +10,23 @@ from typing import TYPE_CHECKING, Any
 
 from ...context import RunContext
 from ...logging import get_logger
+from ...model import DiscoveredModel
 from ...runners.antigravity import (
-    DiscoveredModel,
     antigravity_model_supports_effort,
     default_antigravity_cmd,
     fetch_antigravity_models,
-    fetch_available_models,
-    get_cached_models,
     get_last_antigravity_cmd,
-    get_model_effort_levels,
     parse_and_group_antigravity_models,
-    set_cached_models,
     set_last_antigravity_cmd,
 )
-from ...runners.antigravity import (
+from ...runners.discovery import (
+    fetch_available_models,
+    get_cached_models,
+    get_model_effort_levels,
+    model_supports_effort,
+    set_cached_models,
+)
+from ...runners.discovery import (
     reset_model_cache as runner_reset_model_cache,
 )
 from ...transport import MessageRef, RenderedMessage
@@ -31,7 +34,11 @@ from ...utils.engine_argv import model_problem, safe_preview
 from ...utils.error_display import redact_url_secrets
 from ..bridge import CLEAR_MARKUP, MarkdownParts, prepare_telegram
 from ..chat_prefs import ChatPrefsStore
-from ..engine_overrides import resolve_override_value, with_override
+from ..engine_overrides import (
+    resolve_override_value,
+    supports_reasoning,
+    with_override,
+)
 from ..files import split_command_args
 from ..topic_state import TopicStateStore
 from ..topics import _topic_key
@@ -70,11 +77,13 @@ __all__ = [
     "get_last_antigravity_cmd",
     "get_model_effort_levels",
     "model_selector_state_machine",
+    "model_supports_effort",
     "parse_and_group_antigravity_models",
     "reset_model_cache",
     "reset_model_selector_state",
     "resolve_antigravity_cmd",
     "resolve_antigravity_conversation_id",
+    "resolve_engine_runner",
     "set_cached_models",
     "set_last_antigravity_cmd",
 ]
@@ -181,9 +190,20 @@ def reset_model_selector_state() -> None:
     model_selector_state_machine.reset()
 
 
-def reset_model_cache() -> None:
-    runner_reset_model_cache()
+def reset_model_cache(engine: str | None = None) -> None:
+    runner_reset_model_cache(engine)
     model_selector_state_machine.reset()
+
+
+def resolve_engine_runner(cfg: TelegramBridgeConfig | None, engine: str) -> Any:
+    """Resolve runner instance for engine from config runtime if available."""
+    if cfg is None or not hasattr(cfg, "runtime") or cfg.runtime is None:
+        return None
+    try:
+        resolved = cfg.runtime.resolve_runner(resume_token=None, engine_override=engine)
+        return resolved.runner if resolved is not None and resolved.available else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def resolve_antigravity_cmd(
@@ -347,7 +367,8 @@ async def _render_model_view(
     available_line = f"available engines: {', '.join(cfg.runtime.engine_ids)}"
     sections = [engine_line, model_line, defaults_line, available_line]
 
-    models = await fetch_available_models(engine)
+    runner = resolve_engine_runner(cfg, engine)
+    models = await fetch_available_models(engine, runner=runner)
     if not models:
         return "\n\n".join(sections), None
 
@@ -602,12 +623,9 @@ async def _handle_model_command(
                     text=f"unknown engine `{engine}`.\navailable engines: {available}"
                 )
                 return
-        models = await fetch_available_models(engine)
-        supports_effort = (
-            antigravity_model_supports_effort(model, discovered_models=models)
-            if engine == "antigravity"
-            else True
-        )
+        runner = resolve_engine_runner(cfg, engine)
+        models = await fetch_available_models(engine, runner=runner)
+        supports_effort = model_supports_effort(engine, model, discovered_models=models)
         try:
             scope = await apply_engine_override(
                 reply=reply,
@@ -621,7 +639,7 @@ async def _handle_model_command(
                     model=model,
                     reasoning=(
                         None
-                        if engine == "antigravity" and not supports_effort
+                        if not supports_effort
                         else (current.reasoning if current is not None else None)
                     ),
                 ),
@@ -814,7 +832,8 @@ async def _handle_callback_model(
                 )
             return
 
-        models = await fetch_available_models(engine)
+        runner = resolve_engine_runner(cfg, engine)
+        models = await fetch_available_models(engine, runner=runner)
         matched_m = next(
             (m for m in models if m.model_id == model or model in m.raw_ids),
             None,
@@ -822,56 +841,57 @@ async def _handle_callback_model(
         supports_effort = (
             matched_m.supports_effort
             if matched_m is not None
-            else antigravity_model_supports_effort(model, discovered_models=models)
+            else model_supports_effort(engine, model, discovered_models=models)
         )
-        if engine == "antigravity" and supports_effort:
+        if supports_reasoning(engine) and supports_effort:
             model_id = matched_m.model_id if matched_m is not None else model
             effort_levels = (
                 matched_m.effort_levels
-                if matched_m is not None
-                else ("low", "medium", "high")
+                if matched_m is not None and matched_m.effort_levels
+                else await get_model_effort_levels(engine, model_id, runner=runner)
             )
-            model_selector_state_machine.set_selecting_effort(
-                chat_id=query.chat_id,
-                message_id=query.message_id,
-                engine=engine,
-                model_id=model_id,
-                effort_levels=effort_levels,
-                sender_id=query.sender_id,
-            )
-            if query.callback_query_id is not None:
-                await cfg.bot.answer_callback_query(
-                    callback_query_id=query.callback_query_id,
-                    text=f"Model set to {model}. Choose effort:",
+            if effort_levels:
+                model_selector_state_machine.set_selecting_effort(
+                    chat_id=query.chat_id,
+                    message_id=query.message_id,
+                    engine=engine,
+                    model_id=model_id,
+                    effort_levels=effort_levels,
+                    sender_id=query.sender_id,
                 )
-            effort_text, effort_kb = await _render_effort_view(
-                cfg,
-                msg,
-                engine=engine,
-                model_id=model_id,
-                effort_levels=effort_levels,
-                ambient_context=ambient_context,
-                topic_store=topic_store,
-                chat_prefs=chat_prefs,
-                tkey=tkey,
-            )
-            rendered_text, entities = prepare_telegram(
-                MarkdownParts(header=effort_text)
-            )
-            extra: dict[str, Any] = {
-                "entities": entities,
-                "reply_markup": effort_kb,
-            }
-            try:
-                await cfg.exec_cfg.transport.edit(
-                    ref=MessageRef(
-                        channel_id=query.chat_id, message_id=query.message_id
-                    ),
-                    message=RenderedMessage(text=rendered_text, extra=extra),
+                if query.callback_query_id is not None:
+                    await cfg.bot.answer_callback_query(
+                        callback_query_id=query.callback_query_id,
+                        text=f"Model set to {model}. Choose effort:",
+                    )
+                effort_text, effort_kb = await _render_effort_view(
+                    cfg,
+                    msg,
+                    engine=engine,
+                    model_id=model_id,
+                    effort_levels=effort_levels,
+                    ambient_context=ambient_context,
+                    topic_store=topic_store,
+                    chat_prefs=chat_prefs,
+                    tkey=tkey,
                 )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("model.callback.edit_failed", error=str(exc))
-            return
+                rendered_text, entities = prepare_telegram(
+                    MarkdownParts(header=effort_text)
+                )
+                extra: dict[str, Any] = {
+                    "entities": entities,
+                    "reply_markup": effort_kb,
+                }
+                try:
+                    await cfg.exec_cfg.transport.edit(
+                        ref=MessageRef(
+                            channel_id=query.chat_id, message_id=query.message_id
+                        ),
+                        message=RenderedMessage(text=rendered_text, extra=extra),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("model.callback.edit_failed", error=str(exc))
+                return
 
         model_selector_state_machine.clear(query.chat_id, query.message_id)
 
@@ -891,7 +911,7 @@ async def _handle_callback_model(
                     model=model,
                     reasoning=(
                         None
-                        if engine == "antigravity" and not supports_effort
+                        if not supports_effort
                         else (current.reasoning if current is not None else None)
                     ),
                 ),
@@ -999,19 +1019,21 @@ async def _handle_callback_model(
                 text=f"Model set to {model} ({level})",
             )
 
-        conversation_id = await resolve_antigravity_conversation_id(
-            query.chat_id,
-            tkey=tkey,
-            topic_store=topic_store,
-            chat_prefs=chat_prefs,
-        )
-        agy_cmd = resolve_antigravity_cmd(chat_prefs=chat_prefs)
-        agy_response = await execute_antigravity_model_switch(
-            model,
-            level,
-            conversation_id=conversation_id,
-            antigravity_cmd=agy_cmd,
-        )
+        agy_response = None
+        if engine == "antigravity":
+            conversation_id = await resolve_antigravity_conversation_id(
+                query.chat_id,
+                tkey=tkey,
+                topic_store=topic_store,
+                chat_prefs=chat_prefs,
+            )
+            agy_cmd = resolve_antigravity_cmd(chat_prefs=chat_prefs)
+            agy_response = await execute_antigravity_model_switch(
+                model,
+                level,
+                conversation_id=conversation_id,
+                antigravity_cmd=agy_cmd,
+            )
         parts = [
             f"engine: {engine}",
             f"model: **{model}**",
@@ -1087,7 +1109,7 @@ async def _handle_callback_model(
 
     elif action == "refresh":
         model_selector_state_machine.clear(query.chat_id, query.message_id)
-        reset_model_cache()
+        reset_model_cache(engine)
         if query.callback_query_id is not None:
             await cfg.bot.answer_callback_query(
                 callback_query_id=query.callback_query_id,

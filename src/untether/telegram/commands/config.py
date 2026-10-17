@@ -486,6 +486,24 @@ async def _page_home(ctx: CommandContext) -> None:
     else:
         sh_label = "on" if _status_head_default else "off"
 
+    # --- Status line ---
+    _status_line_default = True
+    try:
+        from ...settings import load_settings_if_exists as _load_sl_cfg
+
+        _sl_result = _load_sl_cfg()
+        if _sl_result is not None:
+            _status_line_default = getattr(
+                _sl_result[0].transports.telegram, "show_status_line", True
+            ) and getattr(_sl_result[0].progress, "show_status_line", True)
+    except (OSError, ValueError, KeyError):
+        pass
+
+    if engine_override and engine_override.show_status_line is not None:
+        sl_label = "on" if engine_override.show_status_line else "off"
+    else:
+        sl_label = "on" if _status_line_default else "off"
+
     # --- Display ---
     lines.append("<b>Display</b>")
     if show_cost_usage:
@@ -493,6 +511,7 @@ async def _page_home(ctx: CommandContext) -> None:
     lines.append(f"Verbose: <b>{vb_display}</b>{_home_hint('vb', verbose_label)}")
     lines.append(f"Resume line: <b>{rl_label}</b>")
     lines.append(f"Status head: <b>{sh_label}</b>")
+    lines.append(f"Status line: <b>{sl_label}</b>")
     lines.append("")
 
     # --- Routing ---
@@ -572,23 +591,24 @@ async def _page_home(ctx: CommandContext) -> None:
         buttons.append(
             [
                 {"text": "🔝 Status head", "callback_data": "config:sh"},
+                {"text": "🏷 Status line", "callback_data": "config:sl"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "🔁 Loop mode", "callback_data": "config:loop"},
-            ]
-        )
-        buttons.append(
-            [
                 {"text": "📡 Listen", "callback_data": "config:tr"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
-            ]
-        )
-        buttons.append(
-            [
                 {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
-                {"text": "↪️ Follow-up", "callback_data": "config:fu"},
             ]
         )
         buttons.append(
             [
+                {"text": "↪️ Follow-up", "callback_data": "config:fu"},
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -607,17 +627,18 @@ async def _page_home(ctx: CommandContext) -> None:
         buttons.append(
             [
                 {"text": "🔝 Status head", "callback_data": "config:sh"},
+                {"text": "🏷 Status line", "callback_data": "config:sl"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "📡 Listen", "callback_data": "config:tr"},
-            ]
-        )
-        buttons.append(
-            [
                 {"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"},
-                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
             ]
         )
         buttons.append(
             [
+                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -638,12 +659,17 @@ async def _page_home(ctx: CommandContext) -> None:
         buttons.append(
             [
                 {"text": "🔝 Status head", "callback_data": "config:sh"},
-                {"text": "📡 Listen", "callback_data": "config:tr"},
+                {"text": "🏷 Status line", "callback_data": "config:sl"},
             ]
         )
         buttons.append(
             [
+                {"text": "📡 Listen", "callback_data": "config:tr"},
                 {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
+            ]
+        )
+        buttons.append(
+            [
                 {"text": "ℹ️ About", "callback_data": "config:ab"},
             ]
         )
@@ -665,14 +691,20 @@ async def _page_home(ctx: CommandContext) -> None:
         )
         buttons.append(
             [
+                {"text": "🏷 Status line", "callback_data": "config:sl"},
                 {"text": "🔍 Verbose", "callback_data": "config:vb"},
-                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
             ]
         )
-        row3 = [{"text": "📡 Listen", "callback_data": "config:tr"}]
+        buttons.append(
+            [
+                {"text": "⚙️ Engine & model", "callback_data": "config:ag"},
+                {"text": "📡 Listen", "callback_data": "config:tr"},
+            ]
+        )
         if show_reasoning:
-            row3.append({"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"})
-        buttons.append(row3)
+            buttons.append(
+                [{"text": f"🧠 {home_rs_label}", "callback_data": "config:rs"}]
+            )
         if current_engine == "antigravity":
             # #980/#981: questions and steer need Untether's agy plugin; the
             # 🔐 page says whether it is installed and how (read-only).
@@ -2712,7 +2744,12 @@ async def _page_status_head(ctx: CommandContext, action: str | None = None) -> N
         new_val = {"on": True, "off": False, "clr": None}[action]
         updated = with_override(current, status_head=new_val)
         await prefs.set_engine_override(chat_id, current_engine, updated)
-        logger.info("config.status_head.set", chat_id=chat_id, value=new_val)
+        logger.info(
+            "config.status_head.set",
+            chat_id=chat_id,
+            sender_id=ctx.message.sender_id,
+            value=new_val,
+        )
         await _page_home(ctx)
         return
 
@@ -2746,7 +2783,7 @@ async def _page_status_head(ctx: CommandContext, action: str | None = None) -> N
         "Places metadata and resume command at the top of the message",
         "instead of the trailing footer.",
         "",
-        _learn_more("telegram"),
+        _learn_more("inline-settings"),
     ]
 
     buttons = [
@@ -2757,6 +2794,90 @@ async def _page_status_head(ctx: CommandContext, action: str | None = None) -> N
             on_data="config:sh:on",
             off_data="config:sh:off",
             clr_data="config:sh:clr",
+        ),
+        [{"text": "← Back", "callback_data": "config:home"}],
+    ]
+
+    await _respond(ctx, "\n".join(lines), buttons)
+
+
+# ---------------------------------------------------------------------------
+# Status line
+# ---------------------------------------------------------------------------
+
+
+async def _page_status_line(ctx: CommandContext, action: str | None = None) -> None:
+    from ..chat_prefs import ChatPrefsStore, resolve_prefs_path
+    from ..engine_overrides import with_override
+
+    config_path = ctx.config_path
+    if config_path is None:
+        await _respond(
+            ctx,
+            "<b>🏷 Status line</b>\n\nUnavailable (no config path).",
+            [[{"text": "← Back", "callback_data": "config:home"}]],
+        )
+        return
+
+    prefs = ChatPrefsStore(resolve_prefs_path(config_path))
+    chat_id = ctx.message.channel_id
+    current_engine, _ = await _resolve_effective_engine(ctx)
+
+    if action in ("on", "off", "clr"):
+        current = await prefs.get_engine_override(chat_id, current_engine)
+        new_val = {"on": True, "off": False, "clr": None}[action]
+        updated = with_override(current, show_status_line=new_val)
+        await prefs.set_engine_override(chat_id, current_engine, updated)
+        logger.info(
+            "config.status_line.set",
+            chat_id=chat_id,
+            sender_id=ctx.message.sender_id,
+            value=new_val,
+        )
+        await _page_home(ctx)
+        return
+
+    # Display
+    override = await prefs.get_engine_override(chat_id, current_engine)
+    sl = override.show_status_line if override else None
+
+    _status_line_default = True
+    try:
+        from ...settings import load_settings_if_exists as _load_sl_cfg
+
+        _sl_result = _load_sl_cfg()
+        if _sl_result is not None:
+            _status_line_default = getattr(
+                _sl_result[0].transports.telegram, "show_status_line", True
+            ) and getattr(_sl_result[0].progress, "show_status_line", True)
+    except (OSError, ValueError, KeyError):
+        pass
+
+    sl_label = (
+        "on"
+        if sl is True
+        else ("off" if sl is False else ("on" if _status_line_default else "off"))
+    )
+
+    lines = [
+        "<b>🏷 Status line</b>",
+        "",
+        f"Current: <b>{sl_label}</b>",
+        "",
+        "Shows workspace directory, model and engine metadata",
+        "either at the top (with Status head) or in the footer.",
+        "",
+        _learn_more("inline-settings"),
+    ]
+
+    buttons = [
+        _toggle_row(
+            "Status line",
+            current=sl,
+            default=_status_line_default,
+            on_data="config:sl:on",
+            off_data="config:sl:off",
+            clr_data="config:sl:clr",
         ),
         [{"text": "← Back", "callback_data": "config:home"}],
     ]
@@ -3017,6 +3138,7 @@ _PAGES: dict[str, object] = {
     "cu": _page_cost_usage,
     "rl": _page_resume_line,
     "sh": _page_status_head,
+    "sl": _page_status_line,
     "ab": _page_about,
     "loop": _page_loop,
     "gt": _page_agy_gate,
@@ -3077,6 +3199,8 @@ _MUTATING_ACTIONS: dict[str, frozenset[str]] = {
         f"{prefix}_{act}" for prefix in ("ac", "su", "bg", "bc") for act in _ON_OFF_CLR
     ),
     "rl": _ON_OFF_CLR,
+    "sh": _ON_OFF_CLR,
+    "sl": _ON_OFF_CLR,
     "ab": frozenset(),
     # #980: read-only status; Re-check (`rc`) is in _OPEN_ACTIONS.
     "gt": frozenset(),
@@ -3230,6 +3354,11 @@ class ConfigCommand:
                 "on": "Status head: on",
                 "off": "Status head: off",
                 "clr": "Status head: cleared",
+            },
+            "sl": {
+                "on": "Status line: on",
+                "off": "Status line: off",
+                "clr": "Status line: cleared",
             },
             "loop": {
                 "on": "🔁 Loop mode: on",

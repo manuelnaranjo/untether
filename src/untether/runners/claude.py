@@ -107,6 +107,7 @@ from ..model import (
     ActionEvent,
     ActionKind,
     CompletedEvent,
+    DiscoveredModel,
     EngineId,
     ResumeToken,
     StartedEvent,
@@ -10078,6 +10079,9 @@ class ClaudeRunner(ResumeTokenMixin, JsonlSubprocessRunner):
     def command(self) -> str:
         return self.claude_cmd
 
+    async def fetch_available_models(self) -> list[DiscoveredModel]:
+        return await fetch_claude_models(self.command())
+
     def build_args(
         self,
         prompt: str,
@@ -13185,3 +13189,50 @@ def cleanup_expired_sessions(max_age_seconds: float = 3600.0) -> int:
         del _ACTIVE_RUNNERS[session_id]
         logger.info("claude_runner.expired_cleanup", session_id=session_id)
     return len(expired)
+
+
+def get_default_claude_models() -> list[DiscoveredModel]:
+    return [
+        DiscoveredModel(
+            model_id="claude-sonnet-5-5",
+            effort_levels=("low", "medium", "high", "xhigh", "max"),
+            raw_ids=("claude-sonnet-5-5", "sonnet"),
+        ),
+        DiscoveredModel(
+            model_id="claude-opus-5-5",
+            effort_levels=("low", "medium", "high", "xhigh", "max"),
+            raw_ids=("claude-opus-5-5", "opus"),
+        ),
+        DiscoveredModel(
+            model_id="claude-fable-5-1",
+            effort_levels=("low", "medium", "high", "xhigh", "max"),
+            raw_ids=("claude-fable-5-1", "fable"),
+        ),
+        DiscoveredModel(
+            model_id="claude-haiku-4-5",
+            effort_levels=(),
+            raw_ids=("claude-haiku-4-5", "haiku"),
+        ),
+        DiscoveredModel(
+            model_id="claude-3-7-sonnet",
+            effort_levels=("low", "medium", "high", "xhigh", "max"),
+            raw_ids=("claude-3-7-sonnet", "claude-3.7-sonnet"),
+        ),
+        DiscoveredModel(
+            model_id="claude-3-5-sonnet",
+            effort_levels=(),
+            raw_ids=("claude-3-5-sonnet", "claude-3.5-sonnet"),
+        ),
+        DiscoveredModel(
+            model_id="claude-3-5-haiku",
+            effort_levels=(),
+            raw_ids=("claude-3-5-haiku", "claude-3.5-haiku"),
+        ),
+    ]
+
+
+async def fetch_claude_models(
+    claude_cmd: str = "claude",
+    timeout_seconds: float = 3.0,
+) -> list[DiscoveredModel]:
+    return get_default_claude_models()

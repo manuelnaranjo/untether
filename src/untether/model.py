@@ -60,6 +60,17 @@ class ResumeToken:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscoveredModel:
+    model_id: str
+    effort_levels: tuple[str, ...] = ()
+    raw_ids: tuple[str, ...] = ()
+
+    @property
+    def supports_effort(self) -> bool:
+        return len(self.effort_levels) > 0
+
+
+@dataclass(frozen=True, slots=True)
 class Action:
     id: str
     kind: ActionKind

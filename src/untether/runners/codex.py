@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -13,7 +16,13 @@ from ..config import ConfigError
 from ..context import WEBHOOK_TRIGGER_PREFIX
 from ..events import EventFactory
 from ..logging import get_logger
-from ..model import ActionPhase, EngineId, ResumeToken, UntetherEvent
+from ..model import (
+    ActionPhase,
+    DiscoveredModel,
+    EngineId,
+    ResumeToken,
+    UntetherEvent,
+)
 from ..runner import (
     _URL_RE,
     JsonlSubprocessRunner,
@@ -47,8 +56,10 @@ __all__ = [
     "CODEX_SAFE_PERMISSION_MODE",
     "ENGINE",
     "CodexRunner",
+    "fetch_codex_models",
     "find_blocked_codex_args",
     "find_exec_only_flag",
+    "parse_codex_models",
     "translate_codex_event",
 ]
 
@@ -816,11 +827,11 @@ class CodexRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         self,
         *,
         codex_cmd: str,
-        extra_args: list[str],
+        extra_args: list[str] | None = None,
         title: str = "Codex",
     ) -> None:
         self.codex_cmd = codex_cmd
-        self.extra_args = extra_args
+        self.extra_args = extra_args or []
         self.session_title = title
 
     def command(self) -> str:
@@ -833,6 +844,9 @@ class CodexRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         if _CODEX_THREAD_ID_RE.fullmatch(value) is None:
             raise engine_argv.EngineArgvError("resume", "not_a_session")
         return value
+
+    async def fetch_available_models(self) -> list[DiscoveredModel]:
+        return await fetch_codex_models(self.command())
 
     def build_args(
         self,
@@ -1167,6 +1181,66 @@ def build_runner(config: EngineConfig, config_path: Path) -> Runner:
         title = profile_value
 
     return CodexRunner(codex_cmd=codex_cmd, extra_args=extra_args, title=title)
+
+
+def parse_codex_models(payload: str | bytes) -> list[DiscoveredModel]:
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return []
+    raw_models = data.get("models")
+    if not isinstance(raw_models, list):
+        return []
+    result: list[DiscoveredModel] = []
+    for m in raw_models:
+        if not isinstance(m, dict):
+            continue
+        if m.get("visibility") == "hidden":
+            continue
+        slug = m.get("slug")
+        if not slug or not isinstance(slug, str):
+            continue
+        raw_efforts = m.get("supported_reasoning_levels")
+        effort_levels: tuple[str, ...] = ()
+        if isinstance(raw_efforts, list):
+            effort_levels = tuple(
+                str(lvl["effort"])
+                for lvl in raw_efforts
+                if isinstance(lvl, dict) and "effort" in lvl
+            )
+        result.append(
+            DiscoveredModel(
+                model_id=slug,
+                effort_levels=effort_levels,
+                raw_ids=(slug,),
+            )
+        )
+    return result
+
+
+async def fetch_codex_models(
+    codex_cmd: str = "codex",
+    timeout_seconds: float = 5.0,
+) -> list[DiscoveredModel]:
+    expanded = Path(codex_cmd).expanduser()
+    if not shutil.which(str(expanded)) and not expanded.exists():
+        return []
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(expanded),
+            "debug",
+            "models",
+            "--bundled",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except Exception:  # noqa: BLE001
+        return []
+    if proc.returncode != 0:
+        return []
+    return parse_codex_models(stdout)
 
 
 BACKEND = EngineBackend(

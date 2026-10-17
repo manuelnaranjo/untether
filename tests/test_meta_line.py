@@ -657,3 +657,102 @@ def test_markdown_formatter_refresh_from_status_head() -> None:
 
     formatter.refresh_from(SimpleNamespace(status_head=False))
     assert formatter.status_head is False
+
+
+def test_show_status_line_disabled_in_status_head() -> None:
+    """When show_status_line=False, status_head only contains resume command."""
+    from untether.model import ResumeToken, StartedEvent
+    from untether.progress import ProgressTracker
+
+    tracker = ProgressTracker(engine="antigravity")
+    evt = StartedEvent(
+        engine="antigravity",
+        resume=ResumeToken(engine="antigravity", value="conv-456"),
+        meta={"model": "gemini-2.5-pro", "effort": "high"},
+    )
+    tracker.note_event(evt)
+    state = tracker.snapshot(
+        resume_formatter=lambda t: f"`agy --conversation {t.value}`",
+        context_line="dir: untether @master",
+        meta_formatter=format_meta_line,
+    )
+    formatter = MarkdownFormatter(status_head=True, show_status_line=False)
+    parts = formatter.render_final_parts(
+        state, elapsed_s=5.0, status="done", answer="Here is the solution."
+    )
+    assert parts.status_head is not None
+    assert "🏷" not in parts.status_head
+    assert "untether" not in parts.status_head
+    assert "agy --conversation conv-456" in parts.status_head
+
+
+def test_show_status_line_disabled_in_footer() -> None:
+    """When show_status_line=False and status_head=False, footer has resume only."""
+    from untether.model import ResumeToken, StartedEvent
+    from untether.progress import ProgressTracker
+
+    tracker = ProgressTracker(engine="claude")
+    evt = StartedEvent(
+        engine="claude",
+        resume=ResumeToken(engine="claude", value="sess-1"),
+        meta={"model": "sonnet"},
+    )
+    tracker.note_event(evt)
+    state = tracker.snapshot(
+        resume_formatter=lambda t: f"claude --resume {t.value}",
+        context_line="dir: untether @dev",
+        meta_formatter=format_meta_line,
+    )
+    formatter = MarkdownFormatter(status_head=False, show_status_line=False)
+    parts = formatter.render_final_parts(
+        state, elapsed_s=5.0, status="done", answer="Done."
+    )
+    assert parts.status_head is None
+    assert parts.footer is not None
+    assert "🏷" not in parts.footer
+    assert "↩️ claude --resume sess-1" in parts.footer
+
+
+def test_markdown_formatter_refresh_from_show_status_line() -> None:
+    """ProgressSettings hot reload updates formatter's show_status_line."""
+    from types import SimpleNamespace
+
+    formatter = MarkdownFormatter(show_status_line=True)
+    assert formatter.show_status_line is True
+
+    formatter.refresh_from(SimpleNamespace(show_status_line=False))
+    assert formatter.show_status_line is False
+
+    formatter.refresh_from(SimpleNamespace(show_status_line=True))
+    assert formatter.show_status_line is True
+
+
+def test_resolve_presenter_respects_run_options() -> None:
+    """_resolve_presenter builds new presenter with run_options status_head and show_status_line."""
+    from untether.runner_bridge import _resolve_presenter
+    from untether.runners.run_options import EngineRunOptions, apply_run_options
+    from untether.telegram.bridge import TelegramPresenter
+
+    default_presenter = TelegramPresenter(
+        formatter=MarkdownFormatter(status_head=False, show_status_line=True)
+    )
+
+    # 1. No run_options returns default_presenter
+    pres = _resolve_presenter(default_presenter, 123)
+    assert pres is default_presenter
+
+    # 2. Run options with status_head=True returns a new presenter with status_head=True
+    with apply_run_options(EngineRunOptions(status_head=True)):
+        pres = _resolve_presenter(default_presenter, 123)
+        assert pres is not default_presenter
+        assert isinstance(pres, TelegramPresenter)
+        assert pres._formatter.status_head is True
+        assert pres._formatter.show_status_line is True
+
+    # 3. Run options with show_status_line=False returns a new presenter with show_status_line=False
+    with apply_run_options(EngineRunOptions(show_status_line=False)):
+        pres = _resolve_presenter(default_presenter, 123)
+        assert pres is not default_presenter
+        assert isinstance(pres, TelegramPresenter)
+        assert pres._formatter.status_head is False
+        assert pres._formatter.show_status_line is False
