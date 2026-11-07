@@ -61,6 +61,7 @@ from .commands.handlers import (
     should_show_resume_line,
 )
 from .commands.parse import is_cancel_command, parse_dot_typo
+from .commands.plan import split_plan_command
 from .commands.reply import make_reply
 from .context import _merge_topic_context, _usage_ctx_set, _usage_topic
 from .engine_defaults import resolve_engine_for_message
@@ -1145,6 +1146,7 @@ class _PendingPrompt:
     merged_message_ids: list[int] = field(default_factory=list)
     # #775: "steer"/"queue" from `/steer <text>` / `/queue <text>`.
     followup_override: str | None = None
+    permission_mode_override: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1341,6 +1343,8 @@ def _merge_block_reason(existing: _PendingPrompt, new: _PendingPrompt) -> str | 
         # #775: a `/steer <text>` and a plain (or `/queue`) prompt must not
         # share a run — the override would apply to both texts.
         return "followup_mode"
+    if existing.permission_mode_override != new.permission_mode_override:
+        return "permission_mode"
     if new.text.lstrip().startswith(("/", "@")):
         return "directive"
     return None
@@ -3345,6 +3349,22 @@ async def run_main_loop(
                     topic_key=topic_key,
                 )
                 engine_override = engine_resolution.engine
+                if (
+                    context is not None
+                    and context.permission_mode == "plan"
+                    and engine_override not in {"antigravity", "claude"}
+                ):
+                    hint = ""
+                    if engine_override in {"codex", "gemini"}:
+                        hint = " Use /config → Approval policy instead."
+                    await make_reply(cfg, msg)(
+                        text=(
+                            f"Plan mode is only available for Antigravity and Claude Code."
+                            f" Current engine: <b>{engine_override}</b>.{hint}"
+                        ),
+                        parse_mode="HTML",
+                    )
+                    return
                 if steerable and await _try_steer(
                     msg=msg,
                     prompt_text=append_reply_context(
@@ -3656,6 +3676,25 @@ async def run_main_loop(
                         context_source=resolved.context_source,
                     )
 
+                plan_override = pending.permission_mode_override
+                if plan_override is None:
+                    cmd_id, cmd_args = parse_slash_command(resolved.prompt)
+                    plan_split = split_plan_command(cmd_id, cmd_args)
+                    if plan_split is not None:
+                        plan_override, stripped_prompt = plan_split
+                        from dataclasses import replace
+
+                        resolved = replace(resolved, prompt=stripped_prompt)
+
+                if plan_override is not None:
+                    from dataclasses import replace
+
+                    if resolved.context is None:
+                        ctx = RunContext(permission_mode=plan_override)
+                    else:
+                        ctx = replace(resolved.context, permission_mode=plan_override)
+                    resolved = replace(resolved, context=ctx)
+
                 prompt_text = resolved.prompt
                 if pending.forwards:
                     forwarded = [
@@ -3691,7 +3730,7 @@ async def run_main_loop(
                     reply_id=pending.reply_id,
                     # #775: plain text / voice transcripts may steer;
                     # anything carrying forwards always queues.
-                    steerable=not pending.forwards,
+                    steerable=not pending.forwards and plan_override is None,
                     followup_override=pending.followup_override,
                 )
 
@@ -3850,6 +3889,13 @@ async def run_main_loop(
                 followup_split = split_followup_command(command_id, args_text)
                 if followup_split is not None:
                     followup_override, text = followup_split
+                    command_id = None
+                    args_text = ""
+
+                permission_mode_override: str | None = None
+                plan_split = split_plan_command(command_id, args_text)
+                if plan_split is not None:
+                    permission_mode_override, text = plan_split
                     command_id = None
                     args_text = ""
 
@@ -4201,6 +4247,7 @@ async def run_main_loop(
                     is_voice_transcribed=is_voice_transcribed,
                     forwards=[],
                     followup_override=followup_override,
+                    permission_mode_override=permission_mode_override,
                 )
                 if reply_id is not None and state.running_tasks.get(
                     MessageRef(channel_id=chat_id, message_id=reply_id)

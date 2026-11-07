@@ -71,6 +71,7 @@ uv run pytest tests/test_*.py -x # specific file
 | `/agent` | Show or set engine for this chat |
 | `/model` | Override the model for an engine |
 | `/planmode` | Set Claude Code permission mode (on/plan-auto/auto/off); in an Antigravity chat `on` = Plan first, `off` = Workspace |
+| `/plan` | Plan a task (`/plan <task>`) or toggle Plan first mode (on/off/show/clear) for Antigravity and Claude |
 | `/usage` | Claude subscription quota; Antigravity quota groups and AI credits; other engines: the last session's tokens |
 | `/stats` | Per-engine session statistics (today/week/all-time) |
 | `/auth` | Codex device re-authentication |

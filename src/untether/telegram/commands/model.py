@@ -353,18 +353,28 @@ async def _render_model_view(
     )
     source_label = ENGINE_SOURCE_LABELS.get(engine_source, engine_source)
     engine_line = f"engine: {engine} ({source_label})"
-    model_value = resolution.value or "default"
+    model_value = (
+        redact_url_secrets(resolution.value) if resolution.value else "default"
+    )
     model_line = (
         f"model: **{model_value}** ({OVERRIDE_SOURCE_LABELS[resolution.source]})"
     )
-    topic_label = resolution.topic_value or "none"
-    if tkey is None:
-        topic_label = "none"
+    topic_label = (
+        "none"
+        if tkey is None or not resolution.topic_value
+        else redact_url_secrets(resolution.topic_value)
+    )
     chat_label = (
-        "unavailable" if chat_prefs is None else resolution.chat_value or "none"
+        "unavailable"
+        if chat_prefs is None
+        else (
+            redact_url_secrets(resolution.chat_value)
+            if resolution.chat_value
+            else "none"
+        )
     )
     defaults_line = f"defaults: topic: {topic_label}, chat: {chat_label}"
-    available_line = f"available engines: {', '.join(cfg.runtime.engine_ids)}"
+    available_line = f"available engines: {cfg.runtime.available_engines_text()}"
     sections = [engine_line, model_line, defaults_line, available_line]
 
     runner = resolve_engine_runner(cfg, engine)

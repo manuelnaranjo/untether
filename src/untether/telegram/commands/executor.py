@@ -566,6 +566,12 @@ class _TelegramCommandExecutor(CommandExecutor):
         run_options = None
         if self._engine_overrides_resolver is not None:
             run_options = await self._engine_overrides_resolver(engine)
+        if request.context is not None:
+            from ..loop import _apply_trigger_overrides
+
+            run_options = _apply_trigger_overrides(
+                run_options, request.context, engine=engine, log=False
+            )
         on_thread_known = (
             self._scheduler.note_thread_known
             if self._on_thread_known is None

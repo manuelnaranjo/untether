@@ -715,10 +715,15 @@ async def send_plain(
     notify: bool = True,
     thread_id: int | None = None,
     reply_markup: dict | None = None,
+    parse_mode: str | None = None,
 ) -> None:
     reply_to = MessageRef(channel_id=chat_id, message_id=user_msg_id)
-    rendered_text, entities = prepare_telegram(MarkdownParts(header=text))
-    extra: dict[str, Any] = {"entities": entities}
+    if parse_mode is not None:
+        extra: dict[str, Any] = {"parse_mode": parse_mode}
+        rendered_text = text
+    else:
+        rendered_text, entities = prepare_telegram(MarkdownParts(header=text))
+        extra = {"entities": entities}
     if reply_markup is not None:
         extra["reply_markup"] = reply_markup
     await transport.send(
